@@ -1,0 +1,225 @@
+{
+  "name": "Facebook Lead Ads - Improved (Webhook to Supabase)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "facebook-leads",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Facebook Webhook",
+      "name": "Facebook Lead Ads Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "facebook-leads"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "d1c425f7-04c0-45a5-9c6d-596440d7d8a3",
+              "leftValue": "={{ $json.entry }}",
+              "rightValue": "",
+              "operator": {
+                "type": "array",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "Check Payload",
+      "name": "Check Valid Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = items[0].json;\nconst changes = payload.entry?.flatMap((entry) => entry.changes || []) || [];\nconst leadChanges = changes.filter((change) => change.field === 'leadgen');\n\nreturn leadChanges.map((change) => ({\n  json: {\n    leadgen_id: change.value.leadgen_id,\n    page_id: change.value.page_id,\n    form_id: change.value.form_id,\n    raw_payload: payload\n  }\n}));"
+      },
+      "id": "Extract Lead IDs",
+      "name": "Extract Lead IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v20.0/{{$json.leadgen_id}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{$env.META_PAGE_ACCESS_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "Fetch Lead Details",
+      "name": "Fetch Lead Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "function field(fields, names) {\n  const wanted = names.map((name) => name.toLowerCase());\n  const found = (fields || []).find((entry) => wanted.includes(String(entry.name).toLowerCase()));\n  return found?.values?.[0] || '';\n}\n\nreturn items.map((item) => {\n  const lead = item.json;\n  const fields = lead.field_data || [];\n  return {\n    json: {\n      source: 'facebook',\n      external_id: lead.id,\n      full_name: field(fields, ['full_name', 'name', 'first_name']),\n      email: field(fields, ['email']),\n      phone: field(fields, ['phone_number', 'phone', 'mobile']),\n      service_requested: field(fields, ['service', 'service_requested']),\n      message: field(fields, ['message', 'comments', 'details']),\n      raw_payload: lead,\n      received_at: lead.created_time || new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "Normalize Facebook Lead",
+      "name": "Normalize Facebook Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1180, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/leads?on_conflict=source,external_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "Upsert Supabase",
+      "name": "Upsert Lead in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true}"
+      },
+      "id": "Respond OK",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1660, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"error\":\"Invalid payload\"}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "Respond Error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [460, 500]
+    }
+  ],
+  "connections": {
+    "Facebook Lead Ads Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Valid Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Valid Payload": {
+      "main": [
+        [
+          {
+            "node": "Extract Lead IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Lead IDs": {
+      "main": [
+        [
+          {
+            "node": "Fetch Lead Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Lead Details": {
+      "main": [
+        [
+          {
+            "node": "Normalize Facebook Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Facebook Lead": {
+      "main": [
+        [
+          {
+            "node": "Upsert Lead in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Lead in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "1"
+}

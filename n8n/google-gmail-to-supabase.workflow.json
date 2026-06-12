@@ -1,0 +1,130 @@
+{
+  "name": "Google Form Leads - Gmail to Supabase",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "Schedule Trigger",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [260, 260]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "filters": {
+          "q": "from:(forms-receipts-noreply@google.com) newer_than:7d"
+        }
+      },
+      "id": "Gmail",
+      "name": "Find Google Form Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [500, 260],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = [];\n\nfunction match(text, label) {\n  const pattern = new RegExp(`${label}\\\\s*[:\\\\-]\\\\s*(.+)`, 'i');\n  const found = text.match(pattern);\n  return found ? found[1].split('\\n')[0].trim() : '';\n}\n\nfor (const item of items) {\n  const source = item.json;\n  const text = [source.textPlain, source.snippet, source.textHtml]\n    .filter(Boolean)\n    .join('\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ');\n\n  rows.push({\n    json: {\n      source: 'google',\n      external_id: source.id || source.messageId,\n      full_name: match(text, 'Name') || source.from?.value?.[0]?.name || '',\n      email: match(text, 'Email') || source.from?.value?.[0]?.address || '',\n      phone: match(text, 'Phone|Mobile'),\n      service_requested: match(text, 'Service|Service Requested'),\n      message: match(text, 'Message|Comments|Details'),\n      raw_payload: source,\n      received_at: source.date || new Date().toISOString()\n    }\n  });\n}\n\nreturn rows;"
+      },
+      "id": "Normalize Google Lead",
+      "name": "Normalize Google Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/leads?on_conflict=source,external_id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "Upsert Supabase",
+      "name": "Upsert Lead in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 260],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_HEADER_AUTH_CREDENTIAL_ID",
+          "name": "Supabase Service Role Header"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Find Google Form Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Google Form Emails": {
+      "main": [
+        [
+          {
+            "node": "Normalize Google Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Google Lead": {
+      "main": [
+        [
+          {
+            "node": "Upsert Lead in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

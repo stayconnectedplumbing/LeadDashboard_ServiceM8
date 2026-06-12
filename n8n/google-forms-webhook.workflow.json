@@ -1,0 +1,113 @@
+{
+  "name": "Google Forms - Webhook to Supabase",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "google-forms",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Google Forms Webhook",
+      "name": "Google Forms Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "google-forms"
+    },
+    {
+      "parameters": {
+        "jsCode": "function field(data, names) {\n  const wanted = names.map((name) => name.toLowerCase());\n  const found = Object.entries(data || {}).find(([key]) => wanted.includes(String(key).toLowerCase()));\n  return found ? String(found[1]) : '';\n}\n\nreturn items.map((item) => {\n  const payload = item.json;\n  return {\n    json: {\n      source: 'google',\n      external_id: payload.formId || payload.id || payload.timestamp || new Date().toISOString(),\n      full_name: field(payload, ['full_name', 'name', 'first_name', 'Full Name']),\n      email: field(payload, ['email', 'Email']),\n      phone: field(payload, ['phone_number', 'phone', 'mobile', 'Phone', 'Mobile']),\n      service_requested: field(payload, ['service', 'service_requested', 'Service', 'Service Requested']),\n      message: field(payload, ['message', 'comments', 'details', 'Message', 'Comments', 'Details']),\n      raw_payload: payload,\n      received_at: payload.timestamp || new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "Normalize Google Lead",
+      "name": "Normalize Google Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/leads?on_conflict=source,external_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "Upsert Supabase",
+      "name": "Upsert Lead in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true}"
+      },
+      "id": "Respond OK",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [940, 300]
+    }
+  ],
+  "connections": {
+    "Google Forms Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Google Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Google Lead": {
+      "main": [
+        [
+          {
+            "node": "Upsert Lead in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Lead in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "versionId": "1"
+}

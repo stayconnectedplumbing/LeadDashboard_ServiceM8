@@ -1,0 +1,79 @@
+{
+  "name": "New Lead - Send Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "INSERT",
+        "schema": "public",
+        "table": "leads",
+        "options": {}
+      },
+      "id": "Supabase Trigger",
+      "name": "When New Lead Added",
+      "type": "@n8n/n8n-nodes-langchain.supabaseTrigger",
+      "typeVersion": 1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => ({\n  json: {\n    ...item.json,\n    lead: item.json.record\n  }\n}));"
+      },
+      "id": "Prepare Data",
+      "name": "Prepare Notification Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.EMAIL_FROM}}",
+        "toEmail": "={{$env.EMAIL_TO}}",
+        "subject": "=New Lead from {{ $json.lead.source }}",
+        "emailType": "html",
+        "message": "=<p>New lead received!</p>\n<p><strong>Name:</strong> {{ $json.lead.full_name }}</p>\n<p><strong>Email:</strong> {{ $json.lead.email }}</p>\n<p><strong>Phone:</strong> {{ $json.lead.phone }}</p>\n<p><strong>Service Requested:</strong> {{ $json.lead.service_requested }}</p>\n<p><strong>Message:</strong> {{ $json.lead.message }}</p>\n<p><strong>Source:</strong> {{ $json.lead.source }}</p>\n<p><strong>Received At:</strong> {{ $json.lead.received_at }}</p>"
+      },
+      "id": "Send Email",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [700, 300],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_SMTP_CREDENTIAL_ID",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When New Lead Added": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notification Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notification Data": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "versionId": "1"
+}

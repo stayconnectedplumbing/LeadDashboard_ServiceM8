@@ -1,0 +1,36 @@
+const leads = [];
+
+function extractField(text, field) {
+  const regex = new RegExp(`${field}:\\s*(.*)`, 'i');
+  const match = text.match(regex);
+  return match ? match[1].trim() : '';
+}
+
+for (const item of items) {
+
+  const emailBody =
+    item.json.textPlain ||
+    item.json.snippet ||
+    '';
+
+  leads.push({
+    json: {
+      source: 'website_form',
+      external_id: item.json.id,
+
+      full_name: extractField(emailBody, 'Name'),
+      email: extractField(emailBody, 'Email'),
+      phone: extractField(emailBody, 'Phone Number'),
+      service_requested: extractField(emailBody, 'Service Type'),
+      suburb: extractField(emailBody, 'Suburb'),
+      message: extractField(emailBody, 'Additional Information'),
+
+      subject: item.json.subject,
+      received_at: item.json.date,
+
+      raw_payload: item.json
+    }
+  });
+}
+
+return leads;
