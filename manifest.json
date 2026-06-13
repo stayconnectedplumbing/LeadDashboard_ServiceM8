@@ -1,14 +1,14 @@
 {
   "name": "Lead Management Dashboard",
   "version": "1.0.0",
-  "iconURL": "https://www.servicem8.com/images/addon-sdk-sample-icon.png",
-  "supportURL": "https://example.com/support",
-  "supportEmail": "support@example.com",
+  "iconURL": "https://leaddashboard-production-adcb.up.railway.app/addon-icon.png",
+  "supportURL": "https://leaddashboard-production-adcb.up.railway.app",
+  "supportEmail": "info@stayconnectedplumbing.com.au",
   "menuItems": [
     {
       "name": "Lead Dashboard",
       "type": "addon",
-      "iconURL": "https://www.servicem8.com/images/addon-sdk-sample-icon.png",
+      "iconURL": "https://leaddashboard-production-adcb.up.railway.app/addon-icon.png",
       "event": "show_lead_dashboard"
     }
   ]

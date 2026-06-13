@@ -3,8 +3,21 @@ create extension if not exists pgcrypto;
 do $$
 begin
   if not exists (select 1 from pg_type where typname = 'lead_source') then
-    create type lead_source as enum ('google', 'facebook');
+    create type lead_source as enum ('google', 'facebook', 'google_form', 'stay_connected_plumbing', 'same_day_home_services', 'same_day_shower_repairs', 'emergency_plumbing_sydney');
   end if;
+end
+$$;
+
+-- If the type already exists, add new values
+do $$
+begin
+  alter type lead_source add value if not exists 'google_form';
+  alter type lead_source add value if not exists 'stay_connected_plumbing';
+  alter type lead_source add value if not exists 'same_day_home_services';
+  alter type lead_source add value if not exists 'same_day_shower_repairs';
+  alter type lead_source add value if not exists 'emergency_plumbing_sydney';
+exception
+  when duplicate_object then null;
 end
 $$;
 
