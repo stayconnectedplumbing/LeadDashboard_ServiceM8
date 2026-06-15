@@ -15,12 +15,15 @@ import {
   ChevronUp,
   X,
   Download,
+  CheckCircle2,
+  CircleAlert,
   ExternalLink,
   Eye,
 } from "lucide-react";
 import { hasSupabaseConfig, supabase } from "./supabaseClient";
 import {
   isInServiceM8Iframe,
+  normalizePushResult,
   pushLeadViaServiceM8Bridge,
 } from "./servicem8Push";
 
@@ -188,6 +191,8 @@ export function App() {
   const [savingId, setSavingId] = useState(null);
   const [pushingId, setPushingId] = useState(null);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState(null);
+  const [pushErrors, setPushErrors] = useState({});
   
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -229,6 +234,13 @@ export function App() {
   useEffect(() => {
     loadLeads();
   }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+
+    const timer = window.setTimeout(() => setToast(null), 10000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     if (!hasSupabaseConfig) return undefined;
@@ -338,6 +350,11 @@ export function App() {
 
     setPushingId(lead.id);
     setError("");
+    setPushErrors(prev => {
+      const next = { ...prev };
+      delete next[lead.id];
+      return next;
+    });
 
     try {
       let result;
@@ -359,17 +376,11 @@ export function App() {
         if (invokeError) {
           throw new Error(invokeError.message);
         }
-        if (data?.error) {
-          throw new Error(data.error);
-        }
-        result = data;
+        result = normalizePushResult(data);
       }
 
-      const jobUuid = result?.job_uuid;
-      if (!jobUuid) {
-        throw new Error("ServiceM8 did not return a job ID");
-      }
-
+      const jobUuid = result.job_uuid;
+      const jobUrl = result.job_url || serviceM8JobUrl(jobUuid);
       const patch = {
         servicem8_job_uuid: jobUuid,
         servicem8_pushed_at: new Date().toISOString(),
@@ -386,12 +397,33 @@ export function App() {
           .eq("id", lead.id);
 
         if (updateError) {
-          setError(updateError.message);
+          setToast({
+            type: "warning",
+            title: "Job created, but link not saved",
+            message: `The ServiceM8 job was created, but saving the link failed: ${updateError.message}`,
+            jobUrl,
+          });
           await loadLeads();
+          return;
         }
       }
+
+      setToast({
+        type: "success",
+        title: result.already_pushed ? "Already in ServiceM8" : "Job created",
+        message: result.already_pushed
+          ? `${lead.full_name || "Lead"} already has a ServiceM8 job.`
+          : `${lead.full_name || "Lead"} was pushed to ServiceM8 as a Quote job.`,
+        jobUrl,
+      });
     } catch (pushError) {
-      setError(pushError instanceof Error ? pushError.message : String(pushError));
+      const message = pushError instanceof Error ? pushError.message : String(pushError);
+      setPushErrors(prev => ({ ...prev, [lead.id]: message }));
+      setToast({
+        type: "error",
+        title: "Push failed",
+        message,
+      });
     } finally {
       setPushingId(null);
     }
@@ -602,6 +634,41 @@ export function App() {
 
       {error && <p className="error">Supabase error: {error}</p>}
 
+      {toast && (
+        <div className={`toast toast-${toast.type}`} role="status">
+          <div className="toast-icon">
+            {toast.type === "success" ? (
+              <CheckCircle2 size={20} />
+            ) : (
+              <CircleAlert size={20} />
+            )}
+          </div>
+          <div className="toast-body">
+            <strong>{toast.title}</strong>
+            <p>{toast.message}</p>
+            {toast.jobUrl && (
+              <a
+                href={toast.jobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="toast-link"
+              >
+                <ExternalLink size={14} />
+                Open job in ServiceM8
+              </a>
+            )}
+          </div>
+          <button
+            className="toast-close"
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setToast(null)}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Leads Table */}
       <section className="table-container">
         <div className="table-wrapper">
@@ -696,31 +763,42 @@ export function App() {
                       </td>
                       <td className="servicem8-cell">
                         {isPushedToServiceM8(lead) ? (
-                          <a
-                            href={serviceM8JobUrl(lead.servicem8_job_uuid)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link pushed-link"
-                          >
-                            <ExternalLink size={14} />
-                            View job
-                          </a>
+                          <div className="push-status push-status-success">
+                            <span className="push-status-label">
+                              <CheckCircle2 size={14} />
+                              Job created
+                            </span>
+                            <a
+                              href={serviceM8JobUrl(lead.servicem8_job_uuid)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link pushed-link"
+                            >
+                              <ExternalLink size={14} />
+                              View job
+                            </a>
+                          </div>
                         ) : (
-                          <button
-                            className="push-button"
-                            type="button"
-                            onClick={() => pushToServiceM8(lead)}
-                            disabled={pushingId === lead.id}
-                          >
-                            {pushingId === lead.id ? (
-                              <>
-                                <Loader2 className="spin" size={14} />
-                                Pushing…
-                              </>
-                            ) : (
-                              "Push ServiceM8"
+                          <div className="push-status">
+                            <button
+                              className="push-button"
+                              type="button"
+                              onClick={() => pushToServiceM8(lead)}
+                              disabled={pushingId === lead.id}
+                            >
+                              {pushingId === lead.id ? (
+                                <>
+                                  <Loader2 className="spin" size={14} />
+                                  Creating job…
+                                </>
+                              ) : (
+                                "Push ServiceM8"
+                              )}
+                            </button>
+                            {pushErrors[lead.id] && (
+                              <p className="push-status-error">{pushErrors[lead.id]}</p>
                             )}
-                          </button>
+                          </div>
                         )}
                       </td>
                       <td className="date-cell">
