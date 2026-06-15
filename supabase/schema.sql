@@ -3,7 +3,7 @@ create extension if not exists pgcrypto;
 do $$
 begin
   if not exists (select 1 from pg_type where typname = 'lead_source') then
-    create type lead_source as enum ('google', 'facebook', 'google_form', 'stay_connected_plumbing', 'same_day_home_services', 'same_day_shower_repairs', 'emergency_plumbing_sydney');
+    create type lead_source as enum ('google', 'facebook', 'google_form', 'wordpress', 'stay_connected_plumbing', 'same_day_home_services', 'same_day_shower_repairs', 'emergency_plumbing_sydney');
   end if;
 end
 $$;
@@ -12,6 +12,7 @@ $$;
 do $$
 begin
   alter type lead_source add value if not exists 'google_form';
+  alter type lead_source add value if not exists 'wordpress';
   alter type lead_source add value if not exists 'stay_connected_plumbing';
   alter type lead_source add value if not exists 'same_day_home_services';
   alter type lead_source add value if not exists 'same_day_shower_repairs';
@@ -33,6 +34,8 @@ create table if not exists public.leads (
   called boolean not null default false,
   call_attempted boolean not null default false,
   booked boolean not null default false,
+  servicem8_job_uuid text,
+  servicem8_pushed_at timestamptz,
   notes text not null default '',
   raw_payload jsonb not null default '{}'::jsonb,
   received_at timestamptz not null default now(),
@@ -48,6 +51,14 @@ create index if not exists leads_source_created_at_idx
 
 create index if not exists leads_booked_idx
   on public.leads (booked);
+
+-- Migration for existing databases (columns must exist before the index below)
+alter table public.leads add column if not exists servicem8_job_uuid text;
+alter table public.leads add column if not exists servicem8_pushed_at timestamptz;
+
+create index if not exists leads_servicem8_job_uuid_idx
+  on public.leads (servicem8_job_uuid)
+  where servicem8_job_uuid is not null;
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -100,7 +111,7 @@ end;
 $$;
 
 comment on table public.leads is
-  'Lead inbox for ServiceM8 dashboard, populated by n8n from Gmail Google Form submissions and Facebook Lead Ads.';
+  'Lead inbox for ServiceM8 dashboard, populated by WordPress webhooks and Facebook Lead Ads via n8n.';
 
 comment on column public.leads.external_id is
-  'Source-specific stable ID, such as Gmail message ID or Facebook leadgen ID, used for idempotent n8n upserts.';
+  'Source-specific stable ID, such as Forminator submission ID or Facebook leadgen ID, used for idempotent upserts.';

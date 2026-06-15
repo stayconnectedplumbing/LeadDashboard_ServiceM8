@@ -1,0 +1,5 @@
+[functions.ingest-lead]
+verify_jwt = false
+
+[functions.wordpress-webhook]
+verify_jwt = false

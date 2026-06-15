@@ -1,9 +1,12 @@
 {
   "name": "Lead Management Dashboard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "iconURL": "https://leaddashboard-production-adcb.up.railway.app/addon-icon.png",
   "supportURL": "https://leaddashboard-production-adcb.up.railway.app",
   "supportEmail": "info@stayconnectedplumbing.com.au",
+  "oauth": {
+    "scope": "create_jobs manage_job_contacts manage_customers"
+  },
   "menuItems": [
     {
       "name": "Lead Dashboard",

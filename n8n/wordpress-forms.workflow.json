@@ -1,0 +1,106 @@
+{
+  "name": "WordPress Forms - Webhook to Supabase",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wordpress-leads",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wordpress-webhook",
+      "name": "WordPress Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "wordpress-leads"
+    },
+    {
+      "parameters": {
+        "jsCode": "function field(data, names) {\n  if (!data || typeof data !== 'object') return '';\n  const wanted = names.map((name) => name.toLowerCase());\n\n  for (const [key, value] of Object.entries(data)) {\n    if (wanted.includes(String(key).toLowerCase()) && value != null && value !== '') {\n      return Array.isArray(value) ? value.join(', ') : String(value);\n    }\n  }\n\n  if (Array.isArray(data.fields)) {\n    for (const entry of data.fields) {\n      const label = String(entry.name || entry.label || entry.id || '').toLowerCase();\n      if (wanted.some((name) => label.includes(name) || name.includes(label))) {\n        return String(entry.value ?? '');\n      }\n    }\n  }\n\n  if (Array.isArray(data.field_data)) {\n    for (const entry of data.field_data) {\n      if (wanted.includes(String(entry.name).toLowerCase())) {\n        return String(entry.values?.[0] ?? '');\n      }\n    }\n  }\n\n  return '';\n}\n\nfunction buildExternalId(payload) {\n  return payload.entry_id\n    || payload.entryId\n    || payload.submission_id\n    || payload.submissionId\n    || payload.id\n    || payload.token\n    || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;\n}\n\nreturn items.map((item) => {\n  const payload = item.json.body ?? item.json;\n  const firstName = field(payload, ['first_name', 'firstname', 'fname']);\n  const lastName = field(payload, ['last_name', 'lastname', 'lname']);\n  const fullName = field(payload, ['full_name', 'name', 'your-name', 'your name', 'customer name'])\n    || [firstName, lastName].filter(Boolean).join(' ');\n\n  return {\n    json: {\n      source: 'wordpress',\n      external_id: String(buildExternalId(payload)),\n      full_name: fullName,\n      email: field(payload, ['email', 'your-email', 'e-mail']),\n      phone: field(payload, ['phone', 'phone_number', 'mobile', 'tel', 'your-phone']),\n      service_requested: field(payload, ['service', 'service_requested', 'service type', 'subject', 'requested service', 'job description']),\n      message: field(payload, ['message', 'comments', 'details', 'your-message', 'additional information', 'enquiry', 'project summary']),\n      raw_payload: payload,\n      received_at: payload.date || payload.submitted_at || payload.created_at || new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "normalize-wordpress-lead",
+      "name": "Normalize WordPress Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest-lead",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "upsert-wordpress-lead",
+      "name": "Upsert WordPress Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INGEST_SECRET_CREDENTIAL_ID",
+          "name": "Supabase Ingest Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"lead_id\":\"{{ $json.lead?.external_id || $json.external_id }}\"}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "WordPress Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize WordPress Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize WordPress Lead": {
+      "main": [
+        [
+          {
+            "node": "Upsert WordPress Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert WordPress Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   CalendarCheck,
-  Check,
+  Globe,
   ClipboardList,
   Loader2,
   Mail,
@@ -15,15 +15,40 @@ import {
   ChevronUp,
   X,
   Download,
-  Eye
+  ExternalLink,
+  Eye,
 } from "lucide-react";
 import { hasSupabaseConfig, supabase } from "./supabaseClient";
+import {
+  isInServiceM8Iframe,
+  pushLeadViaServiceM8Bridge,
+} from "./servicem8Push";
 
-const SOURCES = [
-  { id: "google", label: "Google" },
-  { id: "facebook", label: "Facebook" },
-  { id: "all", label: "All Sources" }
-];
+const SOURCE_LABELS = {
+  google: "Google",
+  google_form: "Google Form",
+  facebook: "Facebook",
+  wordpress: "WordPress",
+  stay_connected_plumbing: "Stay Connected",
+  same_day_home_services: "Same Day Home",
+  same_day_shower_repairs: "Same Day Shower",
+  emergency_plumbing_sydney: "Emergency Plumbing",
+};
+
+function formatSourceLabel(source) {
+  if (SOURCE_LABELS[source]) return SOURCE_LABELS[source];
+  return source
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function SourceIcon({ source }) {
+  if (source === "google" || source === "google_form") return <Mail size={14} />;
+  if (source === "wordpress") return <Globe size={14} />;
+  if (source === "facebook") return <UserRound size={14} />;
+  return <ClipboardList size={14} />;
+}
 
 const DEMO_LEADS = [
   {
@@ -36,7 +61,6 @@ const DEMO_LEADS = [
     message: "Looking for availability next Tuesday.",
     called: false,
     call_attempted: false,
-    booked: false,
     notes: "",
     created_at: new Date().toISOString()
   },
@@ -50,9 +74,23 @@ const DEMO_LEADS = [
     message: "Needs call after 3pm.",
     called: true,
     call_attempted: true,
-    booked: true,
-    notes: "Booked for Friday morning.",
+    servicem8_job_uuid: "demo-job-uuid",
+    servicem8_pushed_at: new Date().toISOString(),
+    notes: "Pushed to ServiceM8 for Friday morning.",
     created_at: new Date(Date.now() - 3600000).toISOString()
+  },
+  {
+    id: "demo-wordpress-1",
+    source: "wordpress",
+    full_name: "Michael Chen",
+    phone: "0433 555 666",
+    email: "michael@example.com",
+    service_requested: "Blocked drain",
+    message: "Submitted via website contact form.",
+    called: false,
+    call_attempted: false,
+    notes: "",
+    created_at: new Date(Date.now() - 1800000).toISOString()
   },
   {
     id: "demo-google-2",
@@ -64,7 +102,6 @@ const DEMO_LEADS = [
     message: "Weekly service preferred.",
     called: false,
     call_attempted: true,
-    booked: false,
     notes: "",
     created_at: new Date(Date.now() - 7200000).toISOString()
   }
@@ -84,10 +121,19 @@ function normalizeLead(lead) {
   return {
     called: false,
     call_attempted: false,
-    booked: false,
+    servicem8_job_uuid: null,
+    servicem8_pushed_at: null,
     notes: "",
-    ...lead
+    ...lead,
   };
+}
+
+function isPushedToServiceM8(lead) {
+  return Boolean(lead.servicem8_job_uuid);
+}
+
+function serviceM8JobUrl(jobUuid) {
+  return `https://go.servicem8.com/openjob/${jobUuid}`;
 }
 
 function downloadCSV(leads) {
@@ -101,7 +147,7 @@ function downloadCSV(leads) {
     "Message",
     "Called",
     "Attempted",
-    "Booked",
+    "ServiceM8",
     "Notes",
     "Created At"
   ];
@@ -115,7 +161,7 @@ function downloadCSV(leads) {
     lead.message || "",
     lead.called ? "Yes" : "No",
     lead.call_attempted ? "Yes" : "No",
-    lead.booked ? "Yes" : "No",
+    isPushedToServiceM8(lead) ? "Yes" : "No",
     lead.notes || "",
     formatDate(lead.created_at)
   ]);
@@ -140,6 +186,7 @@ export function App() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
+  const [pushingId, setPushingId] = useState(null);
   const [error, setError] = useState("");
   
   // Filters
@@ -147,7 +194,7 @@ export function App() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [calledFilter, setCalledFilter] = useState("all");
   const [attemptedFilter, setAttemptedFilter] = useState("all");
-  const [bookedFilter, setBookedFilter] = useState("all");
+  const [pushedFilter, setPushedFilter] = useState("all");
   
   // Expanded rows for notes
   const [expandedRows, setExpandedRows] = useState({});
@@ -209,6 +256,14 @@ export function App() {
     setLocalNotes(notes);
   }, [leads]);
 
+  const sourceOptions = useMemo(() => {
+    const ids = [...new Set(leads.map((lead) => lead.source))].sort();
+    return [
+      { id: "all", label: "All Sources" },
+      ...ids.map((id) => ({ id, label: formatSourceLabel(id) })),
+    ];
+  }, [leads]);
+
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
       // Search query filter
@@ -237,22 +292,21 @@ export function App() {
         (attemptedFilter === "yes" && lead.call_attempted) || 
         (attemptedFilter === "no" && !lead.call_attempted);
       
-      // Booked filter
-      const matchesBooked = bookedFilter === "all" || 
-        (bookedFilter === "yes" && lead.booked) || 
-        (bookedFilter === "no" && !lead.booked);
-      
-      return matchesSearch && matchesSource && matchesCalled && matchesAttempted && matchesBooked;
+      const matchesPushed = pushedFilter === "all" ||
+        (pushedFilter === "yes" && isPushedToServiceM8(lead)) ||
+        (pushedFilter === "no" && !isPushedToServiceM8(lead));
+
+      return matchesSearch && matchesSource && matchesCalled && matchesAttempted && matchesPushed;
     });
-  }, [leads, searchQuery, sourceFilter, calledFilter, attemptedFilter, bookedFilter]);
+  }, [leads, searchQuery, sourceFilter, calledFilter, attemptedFilter, pushedFilter]);
 
   const stats = useMemo(() => {
     const total = filteredLeads.length;
-    const booked = filteredLeads.filter(l => l.booked).length;
-    const needsCall = filteredLeads.filter(l => !l.booked && !l.call_attempted).length;
+    const pushed = filteredLeads.filter(isPushedToServiceM8).length;
+    const needsCall = filteredLeads.filter(l => !isPushedToServiceM8(l) && !l.call_attempted).length;
     const called = filteredLeads.filter(l => l.called).length;
-    
-    return { total, booked, needsCall, called };
+
+    return { total, pushed, needsCall, called };
   }, [filteredLeads]);
 
   async function updateLead(id, patch) {
@@ -279,6 +333,70 @@ export function App() {
     setSavingId(null);
   }
 
+  async function pushToServiceM8(lead) {
+    if (isPushedToServiceM8(lead)) return;
+
+    setPushingId(lead.id);
+    setError("");
+
+    try {
+      let result;
+
+      if (!hasSupabaseConfig) {
+        result = {
+          ok: true,
+          job_uuid: `demo-${lead.id}`,
+          job_url: serviceM8JobUrl(`demo-${lead.id}`),
+        };
+      } else if (isInServiceM8Iframe()) {
+        result = await pushLeadViaServiceM8Bridge(lead);
+      } else {
+        const { data, error: invokeError } = await supabase.functions.invoke(
+          "push-servicem8",
+          { body: { lead_id: lead.id } },
+        );
+
+        if (invokeError) {
+          throw new Error(invokeError.message);
+        }
+        if (data?.error) {
+          throw new Error(data.error);
+        }
+        result = data;
+      }
+
+      const jobUuid = result?.job_uuid;
+      if (!jobUuid) {
+        throw new Error("ServiceM8 did not return a job ID");
+      }
+
+      const patch = {
+        servicem8_job_uuid: jobUuid,
+        servicem8_pushed_at: new Date().toISOString(),
+      };
+
+      setLeads(prev =>
+        prev.map(item => item.id === lead.id ? { ...item, ...patch } : item),
+      );
+
+      if (hasSupabaseConfig && isInServiceM8Iframe()) {
+        const { error: updateError } = await supabase
+          .from("leads")
+          .update(patch)
+          .eq("id", lead.id);
+
+        if (updateError) {
+          setError(updateError.message);
+          await loadLeads();
+        }
+      }
+    } catch (pushError) {
+      setError(pushError instanceof Error ? pushError.message : String(pushError));
+    } finally {
+      setPushingId(null);
+    }
+  }
+
   function toggleExpand(id) {
     setExpandedRows(prev => ({
       ...prev,
@@ -298,7 +416,7 @@ export function App() {
     setSourceFilter("all");
     setCalledFilter("all");
     setAttemptedFilter("all");
-    setBookedFilter("all");
+    setPushedFilter("all");
   }
 
   return (
@@ -364,8 +482,8 @@ export function App() {
             <CalendarCheck size={24} />
           </div>
           <div>
-            <p className="stat-label">Booked</p>
-            <p className="stat-value">{stats.booked}</p>
+            <p className="stat-label">In ServiceM8</p>
+            <p className="stat-value">{stats.pushed}</p>
           </div>
         </div>
       </section>
@@ -415,7 +533,7 @@ export function App() {
               onChange={(e) => setSourceFilter(e.target.value)}
               className="filter-select"
             >
-              {SOURCES.map(source => (
+              {sourceOptions.map(source => (
                 <option key={source.id} value={source.id}>{source.label}</option>
               ))}
             </select>
@@ -448,10 +566,10 @@ export function App() {
           </div>
 
           <div className="filter-group">
-            <label className="filter-label">Booked</label>
-            <select 
-              value={bookedFilter} 
-              onChange={(e) => setBookedFilter(e.target.value)}
+            <label className="filter-label">In ServiceM8</label>
+            <select
+              value={pushedFilter}
+              onChange={(e) => setPushedFilter(e.target.value)}
               className="filter-select"
             >
               <option value="all">All</option>
@@ -477,8 +595,8 @@ export function App() {
       {hasSupabaseConfig && !loading && leads.length === 0 && (
         <p className="notice">
           Connected to Supabase, but no leads found yet. Run{" "}
-          <strong>supabase/seed.sql</strong> in the Supabase SQL editor, or wait
-          for n8n to import leads from Gmail and Facebook.
+          <strong>supabase/seed.sql</strong> in the Supabase SQL editor, or submit
+          a test form via the WordPress webhook (see <strong>wordpress/WEBHOOK.md</strong>).
         </p>
       )}
 
@@ -498,7 +616,7 @@ export function App() {
                 <th>Service</th>
                 <th>Called</th>
                 <th>Attempted</th>
-                <th>Booked</th>
+                <th>ServiceM8</th>
                 <th>Created</th>
                 <th></th>
               </tr>
@@ -519,8 +637,8 @@ export function App() {
                 </tr>
               ) : (
                 filteredLeads.map(lead => (
-                  <>
-                    <tr key={lead.id} className={lead.booked ? "booked" : ""}>
+                  <Fragment key={lead.id}>
+                    <tr className={isPushedToServiceM8(lead) ? "pushed" : ""}>
                       <td className="expand-cell">
                         <button 
                           className="expand-btn"
@@ -532,8 +650,8 @@ export function App() {
                       </td>
                       <td>
                         <span className={`source-badge ${lead.source}`}>
-                          {lead.source === "google" ? <Mail size={14} /> : <UserRound size={14} />}
-                          {lead.source.charAt(0).toUpperCase() + lead.source.slice(1)}
+                          <SourceIcon source={lead.source} />
+                          {formatSourceLabel(lead.source)}
                         </span>
                       </td>
                       <td className="name-cell">
@@ -576,15 +694,34 @@ export function App() {
                           <span className="toggle-custom"></span>
                         </label>
                       </td>
-                      <td>
-                        <label className="toggle-label">
-                          <input
-                            type="checkbox"
-                            checked={lead.booked}
-                            onChange={(e) => updateLead(lead.id, { booked: e.target.checked })}
-                          />
-                          <span className="toggle-custom"></span>
-                        </label>
+                      <td className="servicem8-cell">
+                        {isPushedToServiceM8(lead) ? (
+                          <a
+                            href={serviceM8JobUrl(lead.servicem8_job_uuid)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link pushed-link"
+                          >
+                            <ExternalLink size={14} />
+                            View job
+                          </a>
+                        ) : (
+                          <button
+                            className="push-button"
+                            type="button"
+                            onClick={() => pushToServiceM8(lead)}
+                            disabled={pushingId === lead.id}
+                          >
+                            {pushingId === lead.id ? (
+                              <>
+                                <Loader2 className="spin" size={14} />
+                                Pushing…
+                              </>
+                            ) : (
+                              "Push ServiceM8"
+                            )}
+                          </button>
+                        )}
                       </td>
                       <td className="date-cell">
                         {formatDate(lead.created_at)}
@@ -639,7 +776,7 @@ export function App() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))
               )}
             </tbody>

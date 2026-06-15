@@ -7,11 +7,17 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "sync:gmail": "node worker/sync-gmail.js",
+    "sync:gmail:dry": "node worker/sync-gmail.js --dry-run",
+    "gmail:auth": "node worker/get-gmail-token.js",
+    "test:webhook": "node scripts/test-wordpress-webhook.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
     "@vitejs/plugin-react": "^4.3.1",
+    "dotenv": "^16.4.7",
+    "googleapis": "^144.0.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

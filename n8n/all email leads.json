@@ -1,0 +1,333 @@
+{
+  "name": "All Website Leads - Gmail to Supabase (Edge Function)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [260, 560]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "filters": {
+          "q": "from:(forms-receipts-noreply@google.com) newer_than:7d"
+        }
+      },
+      "id": "fetch-google-form",
+      "name": "Fetch Google Form Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [520, 160],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "filters": {
+          "q": "subject:(New Booking From Website) newer_than:7d"
+        }
+      },
+      "id": "fetch-stay-connected",
+      "name": "Fetch Stay Connected Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [520, 360],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "filters": {
+          "q": "from:(samedayhomeservices.com.au) newer_than:7d"
+        }
+      },
+      "id": "fetch-same-day-home",
+      "name": "Fetch Same Day Home Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [520, 560],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "filters": {
+          "q": "subject:(New Shower Quote Request) newer_than:7d"
+        }
+      },
+      "id": "fetch-same-day-shower",
+      "name": "Fetch Same Day Shower Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [520, 760],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "filters": {
+          "q": "subject:(New Quote Request Emergency Plumbing) newer_than:7d"
+        }
+      },
+      "id": "fetch-emergency-plumbing",
+      "name": "Fetch Emergency Plumbing Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [520, 960],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = [];\nfunction match(text, label) {\n  const re = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, 'i');\n  const m = text.match(re);\n  return m ? m[1].split('\\n')[0].replace(/\\s*\\|.*$/, '').trim() : '';\n}\nfor (const item of items) {\n  const src = item.json;\n  const text = [src.textPlain, src.snippet, src.textHtml]\n    .filter(Boolean).join('\\n')\n    .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');\n  rows.push({ json: {\n    source:            'google_form',\n    external_id:       src.id || src.messageId,\n    full_name:         match(text, 'Name'),\n    email:             match(text, 'Email'),\n    phone:             match(text, 'Phone|Mobile'),\n    service_requested: match(text, 'Service|Service Requested|Job Description'),\n    message:           match(text, 'Message|Comments|Details|Additional Information|Project Summary'),\n    raw_payload:       src,\n    received_at:       src.date || new Date().toISOString()\n  }});\n}\nreturn rows;"
+      },
+      "id": "normalize-google-form",
+      "name": "Normalize Google Form Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = [];\nfunction match(text, label) {\n  const re = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, 'i');\n  const m = text.match(re);\n  return m ? m[1].split('\\n')[0].replace(/\\s*\\|.*$/, '').trim() : '';\n}\nfor (const item of items) {\n  const src = item.json;\n  const text = [src.textPlain, src.snippet, src.textHtml]\n    .filter(Boolean).join('\\n')\n    .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');\n  rows.push({ json: {\n    source:            'stay_connected_plumbing',\n    external_id:       src.id || src.messageId,\n    full_name:         match(text, 'Name'),\n    email:             match(text, 'Email'),\n    phone:             match(text, 'Mobile|Phone Number|Phone'),\n    service_requested: match(text, 'Job Description|Service Type|Service'),\n    message:           match(text, 'Additional Information|Message|Comments|Details'),\n    raw_payload:       src,\n    received_at:       src.date || new Date().toISOString()\n  }});\n}\nreturn rows;"
+      },
+      "id": "normalize-stay-connected",
+      "name": "Normalize Stay Connected Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = [];\nfunction match(text, label) {\n  const re = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, 'i');\n  const m = text.match(re);\n  return m ? m[1].split('\\n')[0].replace(/\\s*\\|.*$/, '').trim() : '';\n}\nfor (const item of items) {\n  const src = item.json;\n  const rawHtml = src.textHtml || '';\n  const stripped = rawHtml\n    .replace(/<br\\s*\\/?>/gi, '\\n').replace(/<\\/tr>/gi, '\\n')\n    .replace(/<\\/td>/gi, ' | ').replace(/<[^>]+>/g, '')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();\n  const text = [src.textPlain, src.snippet, stripped].filter(Boolean).join('\\n');\n  rows.push({ json: {\n    source:            'same_day_home_services',\n    external_id:       src.id || src.messageId,\n    full_name:         match(text, 'Customer Name'),\n    email:             match(text, 'Email'),\n    phone:             match(text, 'Phone'),\n    service_requested: match(text, 'Requested Service'),\n    message:           match(text, 'Project Summary|Additional Information|Message|Comments|Details'),\n    raw_payload:       src,\n    received_at:       src.date || new Date().toISOString()\n  }});\n}\nreturn rows;"
+      },
+      "id": "normalize-same-day-home",
+      "name": "Normalize Same Day Home Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 560]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = [];\nfunction match(text, label) {\n  const re = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, 'i');\n  const m = text.match(re);\n  return m ? m[1].split('\\n')[0].replace(/\\s*\\|.*$/, '').trim() : '';\n}\nfor (const item of items) {\n  const src = item.json;\n  const text = [src.textPlain, src.snippet, src.textHtml]\n    .filter(Boolean).join('\\n')\n    .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');\n  rows.push({ json: {\n    source:            'same_day_shower_repairs',\n    external_id:       src.id || src.messageId,\n    full_name:         match(text, 'Name'),\n    email:             match(text, 'Email'),\n    phone:             match(text, 'Phone|Mobile|Phone Number'),\n    service_requested: match(text, 'Service|Service Type|Job Description'),\n    message:           match(text, 'Additional Information|Message|Comments|Details'),\n    raw_payload:       src,\n    received_at:       src.date || new Date().toISOString()\n  }});\n}\nreturn rows;"
+      },
+      "id": "normalize-same-day-shower",
+      "name": "Normalize Same Day Shower Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 760]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = [];\nfunction match(text, label) {\n  const re = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, 'i');\n  const m = text.match(re);\n  return m ? m[1].split('\\n')[0].replace(/\\s*\\|.*$/, '').trim() : '';\n}\nfor (const item of items) {\n  const src = item.json;\n  const text = [src.textPlain, src.snippet, src.textHtml]\n    .filter(Boolean).join('\\n')\n    .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');\n  rows.push({ json: {\n    source:            'emergency_plumbing_sydney',\n    external_id:       src.id || src.messageId,\n    full_name:         match(text, 'Name'),\n    email:             match(text, 'Email'),\n    phone:             match(text, 'Phone Number|Phone|Mobile'),\n    service_requested: match(text, 'Service Type|Service|Job Description'),\n    message:           match(text, 'Additional Information|Message|Comments|Details'),\n    raw_payload:       src,\n    received_at:       src.date || new Date().toISOString()\n  }});\n}\nreturn rows;"
+      },
+      "id": "normalize-emergency-plumbing",
+      "name": "Normalize Emergency Plumbing Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 960]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest-lead",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "upsert-google-form",
+      "name": "Upsert Google Form Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 160],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INGEST_SECRET_CREDENTIAL_ID",
+          "name": "Supabase Ingest Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest-lead",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "upsert-stay-connected",
+      "name": "Upsert Stay Connected Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 360],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INGEST_SECRET_CREDENTIAL_ID",
+          "name": "Supabase Ingest Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest-lead",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "upsert-same-day-home",
+      "name": "Upsert Same Day Home Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 560],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INGEST_SECRET_CREDENTIAL_ID",
+          "name": "Supabase Ingest Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest-lead",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "upsert-same-day-shower",
+      "name": "Upsert Same Day Shower Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 760],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INGEST_SECRET_CREDENTIAL_ID",
+          "name": "Supabase Ingest Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest-lead",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "upsert-emergency-plumbing",
+      "name": "Upsert Emergency Plumbing Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 960],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INGEST_SECRET_CREDENTIAL_ID",
+          "name": "Supabase Ingest Secret"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          { "node": "Fetch Google Form Emails", "type": "main", "index": 0 },
+          { "node": "Fetch Stay Connected Emails", "type": "main", "index": 0 },
+          { "node": "Fetch Same Day Home Emails", "type": "main", "index": 0 },
+          { "node": "Fetch Same Day Shower Emails", "type": "main", "index": 0 },
+          { "node": "Fetch Emergency Plumbing Emails", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Google Form Emails": {
+      "main": [[{ "node": "Normalize Google Form Lead", "type": "main", "index": 0 }]]
+    },
+    "Fetch Stay Connected Emails": {
+      "main": [[{ "node": "Normalize Stay Connected Lead", "type": "main", "index": 0 }]]
+    },
+    "Fetch Same Day Home Emails": {
+      "main": [[{ "node": "Normalize Same Day Home Lead", "type": "main", "index": 0 }]]
+    },
+    "Fetch Same Day Shower Emails": {
+      "main": [[{ "node": "Normalize Same Day Shower Lead", "type": "main", "index": 0 }]]
+    },
+    "Fetch Emergency Plumbing Emails": {
+      "main": [[{ "node": "Normalize Emergency Plumbing Lead", "type": "main", "index": 0 }]]
+    },
+    "Normalize Google Form Lead": {
+      "main": [[{ "node": "Upsert Google Form Lead", "type": "main", "index": 0 }]]
+    },
+    "Normalize Stay Connected Lead": {
+      "main": [[{ "node": "Upsert Stay Connected Lead", "type": "main", "index": 0 }]]
+    },
+    "Normalize Same Day Home Lead": {
+      "main": [[{ "node": "Upsert Same Day Home Lead", "type": "main", "index": 0 }]]
+    },
+    "Normalize Same Day Shower Lead": {
+      "main": [[{ "node": "Upsert Same Day Shower Lead", "type": "main", "index": 0 }]]
+    },
+    "Normalize Emergency Plumbing Lead": {
+      "main": [[{ "node": "Upsert Emergency Plumbing Lead", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

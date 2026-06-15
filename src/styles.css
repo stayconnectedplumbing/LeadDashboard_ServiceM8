@@ -376,11 +376,11 @@ body {
   background-color: var(--color-bg-tertiary);
 }
 
-.leads-table tbody tr.booked {
+.leads-table tbody tr.pushed {
   background-color: #eff6ff;
 }
 
-.leads-table tbody tr.booked:hover {
+.leads-table tbody tr.pushed:hover {
   background-color: #dbeafe;
 }
 
@@ -427,6 +427,20 @@ body {
 .source-badge.facebook {
   background-color: #e0e7ff;
   color: #4f46e5;
+}
+
+.source-badge.wordpress {
+  background-color: #ffedd5;
+  color: #c2410c;
+}
+
+.source-badge.google_form,
+.source-badge.stay_connected_plumbing,
+.source-badge.same_day_home_services,
+.source-badge.same_day_shower_repairs,
+.source-badge.emergency_plumbing_sydney {
+  background-color: #dbeafe;
+  color: #1d4ed8;
 }
 
 .name-cell {
@@ -586,6 +600,44 @@ body {
 .save-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.servicem8-cell {
+  min-width: 8.5rem;
+}
+
+.push-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.push-button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.push-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.pushed-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 /* Loading & Empty States */
