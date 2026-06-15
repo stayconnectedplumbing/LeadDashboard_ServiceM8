@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { resolveLeadCategory } from "../_shared/lead-category.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,7 +67,10 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   const row = {
-    source: payload.source,
+    source: resolveLeadCategory(
+      payload.source,
+      (payload.raw_payload ?? {}) as Record<string, unknown>,
+    ),
     external_id: payload.external_id,
     full_name: payload.full_name ?? null,
     email: payload.email ?? null,

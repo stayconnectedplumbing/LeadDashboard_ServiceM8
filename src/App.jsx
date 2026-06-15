@@ -4,7 +4,6 @@ import {
   Globe,
   ClipboardList,
   Loader2,
-  Mail,
   Phone,
   RefreshCcw,
   Save,
@@ -26,45 +25,31 @@ import {
   normalizePushResult,
   pushLeadViaServiceM8Bridge,
 } from "./servicem8Push";
+import {
+  CATEGORY_OPTIONS,
+  formatCategoryLabel,
+  resolveLeadCategory,
+} from "./leadCategories";
 
-const SOURCE_LABELS = {
-  google: "Google",
-  google_form: "Google Form",
-  facebook: "Facebook",
-  wordpress: "WordPress",
-  stay_connected_plumbing: "Stay Connected",
-  same_day_home_services: "Same Day Home",
-  same_day_shower_repairs: "Same Day Shower",
-  emergency_plumbing_sydney: "Emergency Plumbing",
-};
-
-function formatSourceLabel(source) {
-  if (SOURCE_LABELS[source]) return SOURCE_LABELS[source];
-  return source
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function SourceIcon({ source }) {
-  if (source === "google" || source === "google_form") return <Mail size={14} />;
-  if (source === "wordpress") return <Globe size={14} />;
-  if (source === "facebook") return <UserRound size={14} />;
+function CategoryIcon({ category }) {
+  if (category === "facebook") return <UserRound size={14} />;
+  if (category === "stay_connected_plumbing") return <Globe size={14} />;
   return <ClipboardList size={14} />;
 }
 
 const DEMO_LEADS = [
   {
-    id: "demo-google-1",
-    source: "google",
+    id: "demo-same-day-1",
+    source: "same_day_home_services",
     full_name: "Sarah Mitchell",
     phone: "0400 123 456",
     email: "sarah@example.com",
-    service_requested: "End of lease clean",
-    message: "Looking for availability next Tuesday.",
+    service_requested: "Blocked drain",
+    message: "Emergency call out needed.",
     called: false,
     call_attempted: false,
     notes: "",
+    raw_payload: { current_url: "https://emergencyplumbingrepairs.com.au/" },
     created_at: new Date().toISOString()
   },
   {
@@ -83,29 +68,31 @@ const DEMO_LEADS = [
     created_at: new Date(Date.now() - 3600000).toISOString()
   },
   {
-    id: "demo-wordpress-1",
-    source: "wordpress",
+    id: "demo-stay-connected-1",
+    source: "stay_connected_plumbing",
     full_name: "Michael Chen",
     phone: "0433 555 666",
     email: "michael@example.com",
-    service_requested: "Blocked drain",
+    service_requested: "Hot water repair",
     message: "Submitted via website contact form.",
     called: false,
     call_attempted: false,
     notes: "",
+    raw_payload: { current_url: "https://stayconnectedplumbing.com.au/" },
     created_at: new Date(Date.now() - 1800000).toISOString()
   },
   {
-    id: "demo-google-2",
-    source: "google",
+    id: "demo-same-day-2",
+    source: "same_day_home_services",
     full_name: "Emma Wilson",
     phone: "0422 333 444",
     email: "emma@test.com",
-    service_requested: "Regular house cleaning",
+    service_requested: "Shower repair",
     message: "Weekly service preferred.",
     called: false,
     call_attempted: true,
     notes: "",
+    raw_payload: { current_url: "https://samedayshowerrepairs.com.au/" },
     created_at: new Date(Date.now() - 7200000).toISOString()
   }
 ];
@@ -142,7 +129,7 @@ function serviceM8JobUrl(jobUuid) {
 function downloadCSV(leads) {
   const headers = [
     "ID",
-    "Source",
+    "Category",
     "Name",
     "Phone",
     "Email",
@@ -150,13 +137,13 @@ function downloadCSV(leads) {
     "Message",
     "Called",
     "Attempted",
-    "ServiceM8",
+    "Push ServiceM8",
     "Notes",
     "Created At"
   ];
   const rows = leads.map(lead => [
     lead.id,
-    lead.source,
+    formatCategoryLabel(lead.source, lead.raw_payload),
     lead.full_name || "",
     lead.phone || "",
     lead.email || "",
@@ -196,7 +183,7 @@ export function App() {
   
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [calledFilter, setCalledFilter] = useState("all");
   const [attemptedFilter, setAttemptedFilter] = useState("all");
   const [pushedFilter, setPushedFilter] = useState("all");
@@ -270,17 +257,10 @@ export function App() {
     setLocalNotes(notes);
   }, [leads]);
 
-  const sourceOptions = useMemo(() => {
-    const ids = [...new Set(leads.map((lead) => lead.source))].sort();
-    return [
-      { id: "all", label: "All Sources" },
-      ...ids.map((id) => ({ id, label: formatSourceLabel(id) })),
-    ];
-  }, [leads]);
-
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
-      // Search query filter
+      const category = resolveLeadCategory(lead.source, lead.raw_payload);
+
       const matchesSearch = !searchQuery.trim() || 
         [
           lead.full_name,
@@ -288,15 +268,13 @@ export function App() {
           lead.email,
           lead.service_requested,
           lead.message,
-          lead.notes
+          lead.notes,
+          formatCategoryLabel(lead.source, lead.raw_payload),
         ].filter(Boolean).some(value => 
           value.toLowerCase().includes(searchQuery.trim().toLowerCase())
         );
       
-      // Source filter
-      const matchesSource = sourceFilter === "all" || lead.source === sourceFilter;
-      
-      // Called filter
+      const matchesCategory = categoryFilter === "all" || category === categoryFilter;
       const matchesCalled = calledFilter === "all" || 
         (calledFilter === "yes" && lead.called) || 
         (calledFilter === "no" && !lead.called);
@@ -316,10 +294,10 @@ export function App() {
       const matchesDateTo = !dateTo ||
         leadDate <= new Date(`${dateTo}T23:59:59.999`);
 
-      return matchesSearch && matchesSource && matchesCalled && matchesAttempted &&
+      return matchesSearch && matchesCategory && matchesCalled && matchesAttempted &&
         matchesPushed && matchesDateFrom && matchesDateTo;
     });
-  }, [leads, searchQuery, sourceFilter, calledFilter, attemptedFilter, pushedFilter, dateFrom, dateTo]);
+  }, [leads, searchQuery, categoryFilter, calledFilter, attemptedFilter, pushedFilter, dateFrom, dateTo]);
 
   const stats = useMemo(() => {
     const total = filteredLeads.length;
@@ -495,7 +473,7 @@ export function App() {
 
   function resetFilters() {
     setSearchQuery("");
-    setSourceFilter("all");
+    setCategoryFilter("all");
     setCalledFilter("all");
     setAttemptedFilter("all");
     setPushedFilter("all");
@@ -566,7 +544,7 @@ export function App() {
             <CalendarCheck size={24} />
           </div>
           <div>
-            <p className="stat-label">In ServiceM8</p>
+            <p className="stat-label">Pushed to SM8</p>
             <p className="stat-value">{stats.pushed}</p>
           </div>
         </div>
@@ -611,14 +589,14 @@ export function App() {
           </div>
 
           <div className="filter-group">
-            <label className="filter-label">Source</label>
+            <label className="filter-label">Category</label>
             <select 
-              value={sourceFilter} 
-              onChange={(e) => setSourceFilter(e.target.value)}
+              value={categoryFilter} 
+              onChange={(e) => setCategoryFilter(e.target.value)}
               className="filter-select"
             >
-              {sourceOptions.map(source => (
-                <option key={source.id} value={source.id}>{source.label}</option>
+              {CATEGORY_OPTIONS.map(category => (
+                <option key={category.id} value={category.id}>{category.label}</option>
               ))}
             </select>
           </div>
@@ -650,7 +628,7 @@ export function App() {
           </div>
 
           <div className="filter-group">
-            <label className="filter-label">In ServiceM8</label>
+            <label className="filter-label">Push ServiceM8</label>
             <select
               value={pushedFilter}
               onChange={(e) => setPushedFilter(e.target.value)}
@@ -748,14 +726,15 @@ export function App() {
             <thead>
               <tr>
                 <th></th>
-                <th>Source</th>
+                <th>Category</th>
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Email</th>
                 <th>Service</th>
                 <th>Called</th>
                 <th>Attempted</th>
-                <th>ServiceM8</th>
+                <th>Push ServiceM8</th>
+                <th>Action</th>
                 <th>Created</th>
                 <th></th>
               </tr>
@@ -763,21 +742,25 @@ export function App() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="11" className="table-loading">
+                  <td colSpan="12" className="table-loading">
                     <Loader2 className="spin" />
                     Loading leads...
                   </td>
                 </tr>
               ) : filteredLeads.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="table-empty">
+                  <td colSpan="12" className="table-empty">
                     No leads found
                   </td>
                 </tr>
               ) : (
-                filteredLeads.map(lead => (
+                filteredLeads.map(lead => {
+                  const category = resolveLeadCategory(lead.source, lead.raw_payload);
+                  const pushed = isPushedToServiceM8(lead);
+
+                  return (
                   <Fragment key={lead.id}>
-                    <tr className={isPushedToServiceM8(lead) ? "pushed" : ""}>
+                    <tr className={pushed ? "pushed" : ""}>
                       <td className="expand-cell">
                         <button 
                           className="expand-btn"
@@ -788,9 +771,9 @@ export function App() {
                         </button>
                       </td>
                       <td>
-                        <span className={`source-badge ${lead.source}`}>
-                          <SourceIcon source={lead.source} />
-                          {formatSourceLabel(lead.source)}
+                        <span className={`source-badge ${category}`}>
+                          <CategoryIcon category={category} />
+                          {formatCategoryLabel(lead.source, lead.raw_payload)}
                         </span>
                       </td>
                       <td className="name-cell">
@@ -833,13 +816,14 @@ export function App() {
                           <span className="toggle-custom"></span>
                         </label>
                       </td>
+                      <td className="push-status-cell">
+                        <span className={`push-flag ${pushed ? "yes" : "no"}`}>
+                          {pushed ? "Yes" : "No"}
+                        </span>
+                      </td>
                       <td className="servicem8-cell">
-                        {isPushedToServiceM8(lead) ? (
+                        {pushed ? (
                           <div className="push-status push-status-success">
-                            <span className="push-status-label">
-                              <CheckCircle2 size={14} />
-                              Job created
-                            </span>
                             <a
                               href={serviceM8JobUrl(lead.servicem8_job_uuid)}
                               target="_blank"
@@ -889,7 +873,7 @@ export function App() {
                     </tr>
                     {expandedRows[lead.id] && (
                       <tr className="expanded-row">
-                        <td colSpan="11">
+                        <td colSpan="12">
                           <div className="expanded-content">
                             {lead.message && (
                               <div className="expanded-section">
@@ -927,7 +911,8 @@ export function App() {
                       </tr>
                     )}
                   </Fragment>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

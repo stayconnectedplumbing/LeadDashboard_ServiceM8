@@ -115,18 +115,15 @@ async function findOrCreateCompany(accessToken, name) {
 }
 
 async function findJobByLeadId(accessToken, leadId) {
-  var poFilter = "$filter=" + encodeURIComponent(
-    "purchase_order_number eq '" + escapeFilterValue(leadId) + "'"
-  );
-  var jobsByPo = await servicem8Get(accessToken, "job.json", poFilter);
-  if (jobsByPo[0] && jobsByPo[0].uuid) return jobsByPo[0].uuid;
-
-  var marker = "Lead ID: " + leadId;
-  var descriptionFilter = "$filter=" + encodeURIComponent(
-    "job_description contains '" + escapeFilterValue(marker) + "'"
-  );
-  var jobsByDescription = await servicem8Get(accessToken, "job.json", descriptionFilter);
-  return jobsByDescription[0] && jobsByDescription[0].uuid ? jobsByDescription[0].uuid : null;
+  try {
+    var poFilter = "$filter=" + encodeURIComponent(
+      "purchase_order_number eq '" + escapeFilterValue(leadId) + "'"
+    );
+    var jobsByPo = await servicem8Get(accessToken, "job.json", poFilter);
+    return jobsByPo[0] && jobsByPo[0].uuid ? jobsByPo[0].uuid : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function createServiceM8JobFromLead(accessToken, lead) {

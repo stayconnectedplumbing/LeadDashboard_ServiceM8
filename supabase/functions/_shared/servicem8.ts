@@ -151,24 +151,16 @@ async function findJobByLeadId(
   accessToken: string,
   leadId: string,
 ): Promise<string | null> {
-  const poFilter = `$filter=${encodeURIComponent(
-    `purchase_order_number eq '${escapeFilterValue(leadId)}'`,
-  )}`;
-  const jobsByPo = await servicem8Get(accessToken, "job.json", poFilter);
-  const poMatch = jobsByPo[0]?.uuid;
-  if (typeof poMatch === "string") return poMatch;
-
-  const marker = `Lead ID: ${leadId}`;
-  const descriptionFilter = `$filter=${encodeURIComponent(
-    `job_description contains '${escapeFilterValue(marker)}'`,
-  )}`;
-  const jobsByDescription = await servicem8Get(
-    accessToken,
-    "job.json",
-    descriptionFilter,
-  );
-  const descriptionMatch = jobsByDescription[0]?.uuid;
-  return typeof descriptionMatch === "string" ? descriptionMatch : null;
+  try {
+    const poFilter = `$filter=${encodeURIComponent(
+      `purchase_order_number eq '${escapeFilterValue(leadId)}'`,
+    )}`;
+    const jobsByPo = await servicem8Get(accessToken, "job.json", poFilter);
+    const poMatch = jobsByPo[0]?.uuid;
+    return typeof poMatch === "string" ? poMatch : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function createServiceM8JobFromLead(

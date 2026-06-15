@@ -502,28 +502,44 @@ body {
   font-weight: 600;
 }
 
-.source-badge.google {
-  background-color: #dbeafe;
-  color: #1d4ed8;
-}
-
 .source-badge.facebook {
   background-color: #e0e7ff;
   color: #4f46e5;
 }
 
-.source-badge.wordpress {
+.source-badge.stay_connected_plumbing {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.source-badge.same_day_home_services {
   background-color: #ffedd5;
   color: #c2410c;
 }
 
-.source-badge.google_form,
-.source-badge.stay_connected_plumbing,
-.source-badge.same_day_home_services,
-.source-badge.same_day_shower_repairs,
-.source-badge.emergency_plumbing_sydney {
-  background-color: #dbeafe;
-  color: #1d4ed8;
+.push-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.push-flag.yes {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.push-flag.no {
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+
+.push-status-cell {
+  white-space: nowrap;
 }
 
 .name-cell {

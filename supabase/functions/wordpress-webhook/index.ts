@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { normalizeWordPressPayload } from "../_shared/normalize-wordpress.ts";
+import { resolveWordPressSource } from "../_shared/lead-category.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -146,6 +147,7 @@ Deno.serve(async (req) => {
   }
 
   const row = normalizeWordPressPayload(payload);
+  row.source = resolveWordPressSource(payload);
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   const { data, error } = await supabase
