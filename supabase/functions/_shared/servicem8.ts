@@ -10,6 +10,13 @@ export type LeadRecord = {
   message?: string | null;
   notes?: string | null;
   raw_payload?: Record<string, unknown>;
+  servicem8_job_uuid?: string | null;
+};
+
+export type PushJobResult = {
+  jobUuid: string;
+  companyUuid?: string | null;
+  alreadyExists?: boolean;
 };
 
 function splitName(fullName?: string | null): { first: string; last: string } {
@@ -17,6 +24,10 @@ function splitName(fullName?: string | null): { first: string; last: string } {
   if (parts.length === 0) return { first: "Lead", last: "" };
   if (parts.length === 1) return { first: parts[0], last: "" };
   return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+function escapeFilterValue(value: string): string {
+  return value.replace(/'/g, "''");
 }
 
 function extractAddress(lead: LeadRecord): string {
@@ -45,6 +56,35 @@ function buildJobDescription(lead: LeadRecord): string {
     `Lead ID: ${lead.id}`,
   ].filter(Boolean);
   return lines.join("\n") || "New lead from dashboard";
+}
+
+function isDuplicateNameError(message: string): boolean {
+  return message.toLowerCase().includes("name must be unique");
+}
+
+async function servicem8Get(
+  accessToken: string,
+  path: string,
+  query?: string,
+): Promise<Record<string, unknown>[]> {
+  const url = query
+    ? `${SERVICEM8_API}/${path}?${query}`
+    : `${SERVICEM8_API}/${path}`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `ServiceM8 GET ${path} failed (${response.status}): ${responseText}`,
+    );
+  }
+
+  if (!responseText) return [];
+  const parsed = JSON.parse(responseText);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 async function servicem8Post(
@@ -76,23 +116,86 @@ async function servicem8Post(
   return recordUuid;
 }
 
+async function findCompanyByName(
+  accessToken: string,
+  name: string,
+): Promise<string | null> {
+  const filter = `$filter=${encodeURIComponent(
+    `name eq '${escapeFilterValue(name)}'`,
+  )}`;
+  const companies = await servicem8Get(accessToken, "company.json", filter);
+  const uuid = companies[0]?.uuid;
+  return typeof uuid === "string" ? uuid : null;
+}
+
+async function findOrCreateCompany(
+  accessToken: string,
+  name: string,
+): Promise<string> {
+  const existing = await findCompanyByName(accessToken, name);
+  if (existing) return existing;
+
+  try {
+    return await servicem8Post(accessToken, "company.json", { name });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isDuplicateNameError(message)) {
+      const retry = await findCompanyByName(accessToken, name);
+      if (retry) return retry;
+    }
+    throw error;
+  }
+}
+
+async function findJobByLeadId(
+  accessToken: string,
+  leadId: string,
+): Promise<string | null> {
+  const poFilter = `$filter=${encodeURIComponent(
+    `purchase_order_number eq '${escapeFilterValue(leadId)}'`,
+  )}`;
+  const jobsByPo = await servicem8Get(accessToken, "job.json", poFilter);
+  const poMatch = jobsByPo[0]?.uuid;
+  if (typeof poMatch === "string") return poMatch;
+
+  const marker = `Lead ID: ${leadId}`;
+  const descriptionFilter = `$filter=${encodeURIComponent(
+    `job_description contains '${escapeFilterValue(marker)}'`,
+  )}`;
+  const jobsByDescription = await servicem8Get(
+    accessToken,
+    "job.json",
+    descriptionFilter,
+  );
+  const descriptionMatch = jobsByDescription[0]?.uuid;
+  return typeof descriptionMatch === "string" ? descriptionMatch : null;
+}
+
 export async function createServiceM8JobFromLead(
   accessToken: string,
   lead: LeadRecord,
-): Promise<{ jobUuid: string; companyUuid: string }> {
+): Promise<PushJobResult> {
+  if (lead.servicem8_job_uuid) {
+    return { jobUuid: lead.servicem8_job_uuid, alreadyExists: true };
+  }
+
+  const existingJob = await findJobByLeadId(accessToken, lead.id);
+  if (existingJob) {
+    return { jobUuid: existingJob, alreadyExists: true };
+  }
+
   const { first, last } = splitName(lead.full_name);
   const jobDescription = buildJobDescription(lead);
   const jobAddress = extractAddress(lead);
   const companyName = lead.full_name?.trim() || "Unknown Lead";
 
-  const companyUuid = await servicem8Post(accessToken, "company.json", {
-    name: companyName,
-  });
+  const companyUuid = await findOrCreateCompany(accessToken, companyName);
 
   const jobBody: Record<string, unknown> = {
     status: "Quote",
     company_uuid: companyUuid,
     job_description: jobDescription,
+    purchase_order_number: lead.id,
   };
   if (jobAddress) jobBody.job_address = jobAddress;
 
@@ -110,5 +213,5 @@ export async function createServiceM8JobFromLead(
     });
   }
 
-  return { jobUuid, companyUuid };
+  return { jobUuid, companyUuid, alreadyExists: false };
 }

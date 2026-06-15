@@ -258,6 +258,11 @@ body {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+.filter-date {
+  cursor: text;
+  min-height: 2.5rem;
+}
+
 .search-box {
   display: flex;
   align-items: center;

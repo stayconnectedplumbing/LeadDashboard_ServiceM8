@@ -200,6 +200,8 @@ export function App() {
   const [calledFilter, setCalledFilter] = useState("all");
   const [attemptedFilter, setAttemptedFilter] = useState("all");
   const [pushedFilter, setPushedFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   
   // Expanded rows for notes
   const [expandedRows, setExpandedRows] = useState({});
@@ -308,9 +310,16 @@ export function App() {
         (pushedFilter === "yes" && isPushedToServiceM8(lead)) ||
         (pushedFilter === "no" && !isPushedToServiceM8(lead));
 
-      return matchesSearch && matchesSource && matchesCalled && matchesAttempted && matchesPushed;
+      const leadDate = new Date(lead.created_at);
+      const matchesDateFrom = !dateFrom ||
+        leadDate >= new Date(`${dateFrom}T00:00:00`);
+      const matchesDateTo = !dateTo ||
+        leadDate <= new Date(`${dateTo}T23:59:59.999`);
+
+      return matchesSearch && matchesSource && matchesCalled && matchesAttempted &&
+        matchesPushed && matchesDateFrom && matchesDateTo;
     });
-  }, [leads, searchQuery, sourceFilter, calledFilter, attemptedFilter, pushedFilter]);
+  }, [leads, searchQuery, sourceFilter, calledFilter, attemptedFilter, pushedFilter, dateFrom, dateTo]);
 
   const stats = useMemo(() => {
     const total = filteredLeads.length;
@@ -345,9 +354,41 @@ export function App() {
     setSavingId(null);
   }
 
-  async function pushToServiceM8(lead) {
-    if (isPushedToServiceM8(lead)) return;
+  async function persistPushToSupabase(leadId, patch) {
+    if (!hasSupabaseConfig) return { ok: true };
 
+    const { error: updateError } = await supabase
+      .from("leads")
+      .update(patch)
+      .eq("id", leadId);
+
+    if (!updateError) return { ok: true };
+
+    const { error: retryError } = await supabase
+      .from("leads")
+      .update(patch)
+      .eq("id", leadId);
+
+    return {
+      ok: !retryError,
+      error: retryError?.message || updateError.message,
+    };
+  }
+
+  async function refreshLeadFromSupabase(leadId) {
+    if (!hasSupabaseConfig) return null;
+
+    const { data, error: loadError } = await supabase
+      .from("leads")
+      .select("*")
+      .eq("id", leadId)
+      .single();
+
+    if (loadError || !data) return null;
+    return normalizeLead(data);
+  }
+
+  async function pushToServiceM8(lead) {
     setPushingId(lead.id);
     setError("");
     setPushErrors(prev => {
@@ -357,6 +398,21 @@ export function App() {
     });
 
     try {
+      const currentLead = (await refreshLeadFromSupabase(lead.id)) || lead;
+
+      if (isPushedToServiceM8(currentLead)) {
+        setLeads(prev =>
+          prev.map(item => item.id === lead.id ? { ...item, ...currentLead } : item),
+        );
+        setToast({
+          type: "success",
+          title: "Already in ServiceM8",
+          message: `${currentLead.full_name || "Lead"} already has a ServiceM8 job.`,
+          jobUrl: serviceM8JobUrl(currentLead.servicem8_job_uuid),
+        });
+        return;
+      }
+
       let result;
 
       if (!hasSupabaseConfig) {
@@ -366,7 +422,7 @@ export function App() {
           job_url: serviceM8JobUrl(`demo-${lead.id}`),
         };
       } else if (isInServiceM8Iframe()) {
-        result = await pushLeadViaServiceM8Bridge(lead);
+        result = await pushLeadViaServiceM8Bridge(currentLead);
       } else {
         const { data, error: invokeError } = await supabase.functions.invoke(
           "push-servicem8",
@@ -381,39 +437,33 @@ export function App() {
 
       const jobUuid = result.job_uuid;
       const jobUrl = result.job_url || serviceM8JobUrl(jobUuid);
+      const alreadyPushed = Boolean(result.already_pushed);
       const patch = {
         servicem8_job_uuid: jobUuid,
-        servicem8_pushed_at: new Date().toISOString(),
+        servicem8_pushed_at: currentLead.servicem8_pushed_at || new Date().toISOString(),
       };
 
       setLeads(prev =>
         prev.map(item => item.id === lead.id ? { ...item, ...patch } : item),
       );
 
-      if (hasSupabaseConfig && isInServiceM8Iframe()) {
-        const { error: updateError } = await supabase
-          .from("leads")
-          .update(patch)
-          .eq("id", lead.id);
-
-        if (updateError) {
-          setToast({
-            type: "warning",
-            title: "Job created, but link not saved",
-            message: `The ServiceM8 job was created, but saving the link failed: ${updateError.message}`,
-            jobUrl,
-          });
-          await loadLeads();
-          return;
-        }
+      const save = await persistPushToSupabase(lead.id, patch);
+      if (!save.ok) {
+        setToast({
+          type: "warning",
+          title: alreadyPushed ? "Job found, but link not saved" : "Job created, but link not saved",
+          message: `ServiceM8 has the job, but Supabase could not save the link: ${save.error}`,
+          jobUrl,
+        });
+        return;
       }
 
       setToast({
         type: "success",
-        title: result.already_pushed ? "Already in ServiceM8" : "Job created",
-        message: result.already_pushed
-          ? `${lead.full_name || "Lead"} already has a ServiceM8 job.`
-          : `${lead.full_name || "Lead"} was pushed to ServiceM8 as a Quote job.`,
+        title: alreadyPushed ? "Already in ServiceM8" : "Job created",
+        message: alreadyPushed
+          ? `${currentLead.full_name || "Lead"} was already in ServiceM8. The dashboard link has been restored.`
+          : `${currentLead.full_name || "Lead"} was pushed to ServiceM8 as a Quote job.`,
         jobUrl,
       });
     } catch (pushError) {
@@ -449,6 +499,8 @@ export function App() {
     setCalledFilter("all");
     setAttemptedFilter("all");
     setPushedFilter("all");
+    setDateFrom("");
+    setDateTo("");
   }
 
   return (
@@ -608,6 +660,26 @@ export function App() {
               <option value="yes">Yes</option>
               <option value="no">No</option>
             </select>
+          </div>
+
+          <div className="filter-group">
+            <label className="filter-label">From date</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="filter-select filter-date"
+            />
+          </div>
+
+          <div className="filter-group">
+            <label className="filter-label">To date</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="filter-select filter-date"
+            />
           </div>
         </div>
       </section>

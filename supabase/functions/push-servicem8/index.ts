@@ -74,20 +74,23 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { jobUuid } = await createServiceM8JobFromLead(accessToken, lead);
+    const { jobUuid, alreadyExists } = await createServiceM8JobFromLead(
+      accessToken,
+      lead,
+    );
 
     const { error: updateError } = await supabase
       .from("leads")
       .update({
         servicem8_job_uuid: jobUuid,
-        servicem8_pushed_at: new Date().toISOString(),
+        servicem8_pushed_at: lead.servicem8_pushed_at ?? new Date().toISOString(),
       })
       .eq("id", lead.id);
 
     if (updateError) {
       return jsonResponse(
         {
-          error: `Job created but failed to save reference: ${updateError.message}`,
+          error: `Job ${alreadyExists ? "found" : "created"} but failed to save reference: ${updateError.message}`,
           job_uuid: jobUuid,
         },
         500,
@@ -96,6 +99,7 @@ Deno.serve(async (req) => {
 
     return jsonResponse({
       ok: true,
+      already_pushed: Boolean(alreadyExists),
       job_uuid: jobUuid,
       job_url: `https://go.servicem8.com/openjob/${jobUuid}`,
     });

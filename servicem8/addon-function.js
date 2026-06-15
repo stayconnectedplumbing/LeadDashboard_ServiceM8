@@ -1,7 +1,6 @@
 "use strict";
 
 // Paste this ENTIRE file into ServiceM8 → Add-on → Edit Function.
-// ServiceM8 only supports one function file (no require/import of other files).
 
 const DASHBOARD_URL = "https://leaddashboard-production-adcb.up.railway.app";
 const SERVICEM8_API = "https://api.servicem8.com/api_1.0";
@@ -13,10 +12,14 @@ function splitName(fullName) {
   return { first: parts[0], last: parts.slice(1).join(" ") };
 }
 
+function escapeFilterValue(value) {
+  return String(value).replace(/'/g, "''");
+}
+
 function extractAddress(lead) {
   var payload = lead.raw_payload || {};
   var keys = ["suburb", "city", "location", "address", "job_address"];
-  var field, value, i, j;
+  var field, value, i;
 
   for (i = 0; i < keys.length; i++) {
     for (field in payload) {
@@ -44,6 +47,28 @@ function buildJobDescription(lead) {
   return lines.join("\n") || "New lead from dashboard";
 }
 
+function isDuplicateNameError(message) {
+  return String(message).toLowerCase().indexOf("name must be unique") !== -1;
+}
+
+async function servicem8Get(accessToken, path, query) {
+  var url = SERVICEM8_API + "/" + path;
+  if (query) url += "?" + query;
+
+  var response = await fetch(url, {
+    headers: { Authorization: "Bearer " + accessToken },
+  });
+
+  var responseText = await response.text();
+  if (!response.ok) {
+    throw new Error("ServiceM8 GET " + path + " failed (" + response.status + "): " + responseText);
+  }
+
+  if (!responseText) return [];
+  var parsed = JSON.parse(responseText);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 async function servicem8Post(accessToken, path, body) {
   var response = await fetch(SERVICEM8_API + "/" + path, {
     method: "POST",
@@ -67,7 +92,59 @@ async function servicem8Post(accessToken, path, body) {
   return recordUuid;
 }
 
+async function findCompanyByName(accessToken, name) {
+  var filter = "$filter=" + encodeURIComponent("name eq '" + escapeFilterValue(name) + "'");
+  var companies = await servicem8Get(accessToken, "company.json", filter);
+  return companies[0] && companies[0].uuid ? companies[0].uuid : null;
+}
+
+async function findOrCreateCompany(accessToken, name) {
+  var existing = await findCompanyByName(accessToken, name);
+  if (existing) return existing;
+
+  try {
+    return await servicem8Post(accessToken, "company.json", { name: name });
+  } catch (error) {
+    var message = error instanceof Error ? error.message : String(error);
+    if (isDuplicateNameError(message)) {
+      var retry = await findCompanyByName(accessToken, name);
+      if (retry) return retry;
+    }
+    throw error;
+  }
+}
+
+async function findJobByLeadId(accessToken, leadId) {
+  var poFilter = "$filter=" + encodeURIComponent(
+    "purchase_order_number eq '" + escapeFilterValue(leadId) + "'"
+  );
+  var jobsByPo = await servicem8Get(accessToken, "job.json", poFilter);
+  if (jobsByPo[0] && jobsByPo[0].uuid) return jobsByPo[0].uuid;
+
+  var marker = "Lead ID: " + leadId;
+  var descriptionFilter = "$filter=" + encodeURIComponent(
+    "job_description contains '" + escapeFilterValue(marker) + "'"
+  );
+  var jobsByDescription = await servicem8Get(accessToken, "job.json", descriptionFilter);
+  return jobsByDescription[0] && jobsByDescription[0].uuid ? jobsByDescription[0].uuid : null;
+}
+
 async function createServiceM8JobFromLead(accessToken, lead) {
+  if (lead.servicem8_job_uuid) {
+    return {
+      jobUuid: lead.servicem8_job_uuid,
+      alreadyExists: true,
+    };
+  }
+
+  var existingJob = await findJobByLeadId(accessToken, lead.id);
+  if (existingJob) {
+    return {
+      jobUuid: existingJob,
+      alreadyExists: true,
+    };
+  }
+
   var names = splitName(lead.full_name);
   var first = names.first;
   var last = names.last;
@@ -75,14 +152,13 @@ async function createServiceM8JobFromLead(accessToken, lead) {
   var jobAddress = extractAddress(lead);
   var companyName = String(lead.full_name || "").trim() || "Unknown Lead";
 
-  var companyUuid = await servicem8Post(accessToken, "company.json", {
-    name: companyName,
-  });
+  var companyUuid = await findOrCreateCompany(accessToken, companyName);
 
   var jobBody = {
     status: "Quote",
     company_uuid: companyUuid,
     job_description: jobDescription,
+    purchase_order_number: lead.id,
   };
   if (jobAddress) jobBody.job_address = jobAddress;
 
@@ -100,7 +176,11 @@ async function createServiceM8JobFromLead(accessToken, lead) {
     });
   }
 
-  return { jobUuid: jobUuid, companyUuid: companyUuid };
+  return {
+    jobUuid: jobUuid,
+    companyUuid: companyUuid,
+    alreadyExists: false,
+  };
 }
 
 exports.handler = async function (event) {
@@ -115,22 +195,12 @@ exports.handler = async function (event) {
       return { eventResponse: JSON.stringify({ error: "Lead data is required" }) };
     }
 
-    if (lead.servicem8_job_uuid) {
-      return {
-        eventResponse: JSON.stringify({
-          ok: true,
-          already_pushed: true,
-          job_uuid: lead.servicem8_job_uuid,
-          job_url: "https://go.servicem8.com/openjob/" + lead.servicem8_job_uuid,
-        }),
-      };
-    }
-
     try {
       var result = await createServiceM8JobFromLead(accessToken, lead);
       return {
         eventResponse: JSON.stringify({
           ok: true,
+          already_pushed: Boolean(result.alreadyExists),
           job_uuid: result.jobUuid,
           job_url: "https://go.servicem8.com/openjob/" + result.jobUuid,
         }),
