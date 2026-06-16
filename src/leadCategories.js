@@ -13,6 +13,18 @@ export const CATEGORY_OPTIONS = [
   { id: "facebook", label: CATEGORY_LABELS.facebook },
 ];
 
+export const PLATFORM_CATEGORIES = [
+  "same_day_home_services",
+  "stay_connected_plumbing",
+  "facebook",
+];
+
+export const PLATFORM_SHORT_LABELS = {
+  same_day_home_services: "Same Day Home Services",
+  stay_connected_plumbing: "Stay Connected Plumbing",
+  facebook: "Facebook",
+};
+
 const SAME_DAY_HOSTS = [
   "samedayhomeservices.com.au",
   "samedayshowerrepairs.com.au",
@@ -50,4 +62,55 @@ export function resolveLeadCategory(source, rawPayload = {}) {
 export function formatCategoryLabel(source, rawPayload) {
   const category = resolveLeadCategory(source, rawPayload);
   return CATEGORY_LABELS[category] || category;
+}
+
+export function getLeadReceivedAt(lead) {
+  return new Date(lead.received_at || lead.created_at);
+}
+
+export function formatTimeSince(date) {
+  const ms = Date.now() - date.getTime();
+  if (ms < 0) return "Just now";
+
+  const hours = ms / (1000 * 60 * 60);
+  if (hours < 1) {
+    const minutes = Math.max(1, Math.round(hours * 60));
+    return minutes === 1 ? "< 1 hr" : `${minutes} min`;
+  }
+
+  const rounded = Math.round(hours * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)} hrs`;
+}
+
+export function getLastLeadAgeByCategory(leads) {
+  return PLATFORM_CATEGORIES.map((categoryId) => {
+    const categoryLeads = leads.filter(
+      (lead) => resolveLeadCategory(lead.source, lead.raw_payload) === categoryId,
+    );
+
+    if (!categoryLeads.length) {
+      return {
+        id: categoryId,
+        label: PLATFORM_SHORT_LABELS[categoryId],
+        age: "—",
+        detail: "No leads yet",
+        isStale: false,
+      };
+    }
+
+    const latestMs = categoryLeads.reduce((max, lead) => {
+      const time = getLeadReceivedAt(lead).getTime();
+      return time > max ? time : max;
+    }, 0);
+
+    const hours = (Date.now() - latestMs) / (1000 * 60 * 60);
+
+    return {
+      id: categoryId,
+      label: PLATFORM_SHORT_LABELS[categoryId],
+      age: formatTimeSince(new Date(latestMs)),
+      detail: "Since last lead",
+      isStale: hours >= 24,
+    };
+  });
 }

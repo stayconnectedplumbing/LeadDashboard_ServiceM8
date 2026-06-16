@@ -115,3 +115,6 @@ comment on table public.leads is
 
 comment on column public.leads.external_id is
   'Source-specific stable ID, such as Forminator submission ID or Facebook leadgen ID, used for idempotent upserts.';
+
+-- WildJar phone calls (see supabase/migrations/create-phone-calls.sql for full migration)
+-- Run create-phone-calls.sql on existing databases.

@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.wordpress-webhook]
 verify_jwt = false
+
+[functions.wildjar-webhook]
+verify_jwt = false

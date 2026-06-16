@@ -3,7 +3,7 @@
 Living document for decisions, architecture, audit findings, and session context.  
 **Update this file when requirements, infrastructure, or significant behaviour changes.**
 
-**Last updated:** 2026-06-13
+**Last updated:** 2026-06-15
 
 ---
 
@@ -48,11 +48,13 @@ Run once in Supabase SQL Editor:
 ## Ingestion paths
 
 ```
-WordPress Forminator  →  wordpress-webhook  →  Supabase leads  →  Dashboard
-Facebook Lead Ads     →  n8n                →  ingest-lead     →  Supabase leads  →  Dashboard
+WordPress Forminator  →  wordpress-webhook  →  Supabase leads       →  Dashboard (Leads)
+Facebook Lead Ads     →  n8n                →  ingest-lead          →  Supabase leads       →  Dashboard (Leads)
+WildJar phone calls   →  wildjar-webhook    →  Supabase phone_calls →  Dashboard (Call Tracking)
 ```
 
 - WordPress handoff: `wordpress/WEBHOOK.md`
+- WildJar handoff: `wildjar/WEBHOOK.md`
 - Facebook: `n8n/facebook-leads-to-supabase.workflow.json`
 - **Deprecated:** Gmail parsing (`worker/`, `n8n/all email leads.json`)
 
@@ -100,15 +102,19 @@ Do **not** use `job_description contains` filter — ServiceM8 returns `Invalid 
 
 Filters: search, category, called, attempted, push yes/no, date range.
 
+Stats bar: Total, Needs Call, Called, Pushed to SM8.
+
+**Last lead by platform** — separate time since last lead for each category (Same Day Home Services, Stay Connected Plumbing, Facebook). Uses `received_at`, updates every minute. Cards highlight amber if no lead in 24+ hours.
+
 ---
 
-## Planned integrations
+## WildJar call tracking
 
-### WildJar (call tracking)
-
-- **Status:** Not built yet — waiting on API credentials from client
-- **Planned:** Ingest call tracking data; display under call tracking in dashboard
-- **Category:** Separate from the 3 lead source categories above
+- **Status:** Built — webhook + separate `phone_calls` table + Call Tracking UI section
+- **Table:** `phone_calls` (not mixed with form `leads`)
+- **Edge Function:** `wildjar-webhook` (auth via `WILDJAR_WEBHOOK_SECRET`)
+- **Setup:** `wildjar/WEBHOOK.md`
+- **UI:** Left sidebar → **Call Tracking** (separate from **Leads**)
 
 ---
 
@@ -148,7 +154,11 @@ Filters: search, category, called, attempted, push yes/no, date range.
 | `memory.md` | Short pointer to this file |
 | `claude.md` | AI technical guide (may lag behind) |
 | `README.md` | Human setup / deploy |
-| `src/App.jsx` | Dashboard UI |
+| `src/App.jsx` | App shell + sidebar navigation |
+| `src/views/LeadsView.jsx` | Form leads table |
+| `src/views/CallTrackingView.jsx` | WildJar phone calls table |
+| `supabase/functions/wildjar-webhook/` | WildJar webhook ingestion |
+| `supabase/migrations/create-phone-calls.sql` | `phone_calls` table |
 | `src/leadCategories.js` | 3-category labels + resolver |
 | `servicem8/addon-function.js` | Paste into ServiceM8 (single file) |
 | `supabase/functions/_shared/lead-category.ts` | Ingestion category mapping |
