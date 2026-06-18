@@ -7,7 +7,6 @@ import {
 import {
   ClipboardList,
   PhoneCall,
-  X,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -59,64 +58,50 @@ const menuItemStyles = {
       : undefined,
 };
 
-export function Sidebar({ activeView, onNavigate, open, onOpenChange }) {
-  const handleNavigate = (viewId) => {
-    onNavigate(viewId);
-    onOpenChange(false);
-  };
-
+export function Sidebar({ activeView, onNavigate }) {
   return (
-    <>
-      <ProSidebar
-        toggled={open}
-        breakPoint="all"
-        width="260px"
-        backgroundColor="#0f172a"
-        transitionDuration={250}
-        onBackdropClick={() => onOpenChange(false)}
-        rootStyles={{
-          border: "none",
-          [`.${sidebarClasses.container}`]: {
-            borderRight: "1px solid #1e293b",
-            display: "flex",
-            flexDirection: "column",
-            height: "100vh",
-          },
-        }}
-      >
-        <div className="pro-sidebar-brand">
-          <div>
-            <p className="pro-sidebar-eyebrow">ServiceM8</p>
-            <h2 className="pro-sidebar-title">Lead Dashboard</h2>
-          </div>
-          <button
-            type="button"
-            className="pro-sidebar-close"
-            onClick={() => onOpenChange(false)}
-            aria-label="Close menu"
-          >
-            <X size={18} />
-          </button>
+    <ProSidebar
+      width="260px"
+      backgroundColor="#0f172a"
+      transitionDuration={250}
+      rootStyles={{
+        border: "none",
+        position: "sticky",
+        top: 0,
+        flexShrink: 0,
+        height: "100vh",
+        [`.${sidebarClasses.container}`]: {
+          borderRight: "1px solid #1e293b",
+          display: "flex",
+          flexDirection: "column",
+          height: "100vh",
+        },
+      }}
+    >
+      <div className="pro-sidebar-brand">
+        <div>
+          <p className="pro-sidebar-eyebrow">ServiceM8</p>
+          <h2 className="pro-sidebar-title">Lead Dashboard</h2>
         </div>
+      </div>
 
-        <Menu menuItemStyles={menuItemStyles}>
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeView === item.id;
+      <Menu menuItemStyles={menuItemStyles}>
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeView === item.id;
 
-            return (
-              <MenuItem
-                key={item.id}
-                active={isActive}
-                icon={<Icon size={20} />}
-                onClick={() => handleNavigate(item.id)}
-              >
-                {item.label}
-              </MenuItem>
-            );
-          })}
-        </Menu>
-      </ProSidebar>
-    </>
+          return (
+            <MenuItem
+              key={item.id}
+              active={isActive}
+              icon={<Icon size={20} />}
+              onClick={() => onNavigate(item.id)}
+            >
+              {item.label}
+            </MenuItem>
+          );
+        })}
+      </Menu>
+    </ProSidebar>
   );
 }

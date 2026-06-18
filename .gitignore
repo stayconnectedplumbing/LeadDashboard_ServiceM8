@@ -4,3 +4,10 @@ dist
 .env.local
 .DS_Store
 npm-debug.log*
+
+# Local dev / temp (not needed to run the app)
+tmp/
+supabase/.temp/
+scripts/check-sidebar.mjs
+*_secrets.txt
+ayman_secrets.txt

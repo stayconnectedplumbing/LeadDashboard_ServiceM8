@@ -6,3 +6,9 @@ verify_jwt = false
 
 [functions.wildjar-webhook]
 verify_jwt = false
+
+[functions.facebook-webhook]
+verify_jwt = false
+
+[functions.facebook-sync-leads]
+verify_jwt = false

@@ -48,6 +48,7 @@ body {
 }
 
 .app-layout {
+  display: flex;
   min-height: 100vh;
   background-color: var(--color-bg);
 }
@@ -89,62 +90,23 @@ body {
   font-weight: 700;
 }
 
-.pro-sidebar-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid #334155;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: #94a3b8;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 150ms ease;
-}
-
-.pro-sidebar-close:hover {
-  color: #f8fafc;
-  background-color: rgba(255, 255, 255, 0.06);
-  border-color: #475569;
-}
-
-.sidebar-toggle-btn {
-  position: fixed;
-  top: 1rem;
-  left: 1rem;
-  z-index: 50;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background-color: var(--color-bg-secondary);
-  color: var(--color-text-primary);
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-}
-
 .main-content {
-  width: 100%;
-  min-height: 100vh;
+  flex: 1;
   min-width: 0;
+  min-height: 100vh;
   overflow-x: hidden;
 }
 
 .page-shell {
   min-height: 100vh;
-  padding: 2rem 2rem 2rem 4.5rem;
+  padding: 2rem;
   max-width: 1600px;
   margin: 0 auto;
 }
 
 .app-shell {
   min-height: 100vh;
-  padding: 2rem 2rem 2rem 4.5rem;
+  padding: 2rem;
   max-width: 1600px;
   margin: 0 auto;
 }

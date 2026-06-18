@@ -49,13 +49,13 @@ Run once in Supabase SQL Editor:
 
 ```
 WordPress Forminator  →  wordpress-webhook  →  Supabase leads       →  Dashboard (Leads)
-Facebook Lead Ads     →  n8n                →  ingest-lead          →  Supabase leads       →  Dashboard (Leads)
+Facebook Lead Ads     →  facebook-webhook (+ facebook-sync-leads fallback)  →  Supabase leads  →  Dashboard
 WildJar phone calls   →  wildjar-webhook    →  Supabase phone_calls →  Dashboard (Call Tracking)
 ```
 
 - WordPress handoff: `wordpress/WEBHOOK.md`
 - WildJar handoff: `wildjar/WEBHOOK.md`
-- Facebook: `n8n/facebook-leads-to-supabase.workflow.json`
+- Facebook: `facebook/WEBHOOK.md` — direct Meta → Supabase; `facebook/WEBHOOK-FIX.md` for real-time webhooks; `facebook/TOKEN.md` for tokens
 - **Deprecated:** Gmail parsing (`worker/`, `n8n/all email leads.json`)
 
 ---
@@ -158,6 +158,7 @@ Stats bar: Total, Needs Call, Called, Pushed to SM8.
 | `src/views/LeadsView.jsx` | Form leads table |
 | `src/views/CallTrackingView.jsx` | WildJar phone calls table |
 | `supabase/functions/wildjar-webhook/` | WildJar webhook ingestion |
+| `supabase/functions/facebook-webhook/` | Facebook Lead Ads webhook (no n8n) |
 | `supabase/migrations/create-phone-calls.sql` | `phone_calls` table |
 | `src/leadCategories.js` | 3-category labels + resolver |
 | `servicem8/addon-function.js` | Paste into ServiceM8 (single file) |
