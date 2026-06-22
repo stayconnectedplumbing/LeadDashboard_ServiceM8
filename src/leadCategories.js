@@ -1,3 +1,5 @@
+import { parseAustralianLocalTime } from "./utils/time.js";
+
 /** Three lead source categories — see PROJECT.md */
 
 export const CATEGORY_LABELS = {
@@ -65,6 +67,13 @@ export function formatCategoryLabel(source, rawPayload) {
 }
 
 export function getLeadReceivedAt(lead) {
+  const payload = lead.raw_payload;
+  const entryTime = payload?.entry_time ?? payload?.submitted_at;
+  if (entryTime) {
+    const parsed = parseAustralianLocalTime(entryTime);
+    if (parsed) return parsed;
+  }
+
   return new Date(lead.received_at || lead.created_at);
 }
 

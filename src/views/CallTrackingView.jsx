@@ -28,17 +28,7 @@ import {
   statusBadgeClass,
 } from "../callTracking";
 import { formatDate, formatDuration } from "../utils/format";
-
-function isToday(dateValue) {
-  if (!dateValue) return false;
-  const date = new Date(dateValue);
-  const now = new Date();
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
-}
+import { endOfSydneyDay, isTodayInSydney, startOfSydneyDay } from "../utils/time";
 
 function getCallTime(call) {
   return call.call_started_at || call.created_at;
@@ -146,9 +136,9 @@ export function CallTrackingView() {
 
       const callDate = new Date(getCallTime(call));
       const matchesDateFrom =
-        !dateFrom || callDate >= new Date(`${dateFrom}T00:00:00`);
+        !dateFrom || callDate >= startOfSydneyDay(dateFrom);
       const matchesDateTo =
-        !dateTo || callDate <= new Date(`${dateTo}T23:59:59.999`);
+        !dateTo || callDate <= endOfSydneyDay(dateTo);
 
       return (
         matchesSearch &&
@@ -172,7 +162,9 @@ export function CallTrackingView() {
   ]);
 
   const stats = useMemo(() => {
-    const todayCalls = filteredCalls.filter((call) => isToday(getCallTime(call)));
+    const todayCalls = filteredCalls.filter((call) =>
+      isTodayInSydney(getCallTime(call)),
+    );
     const answered = filteredCalls.filter(
       (call) => call.call_status === "answered",
     ).length;

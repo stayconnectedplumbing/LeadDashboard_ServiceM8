@@ -87,3 +87,9 @@ Open the dashboard → **Call Tracking** in the left menu. Calls appear in real 
 - Phone calls are stored in the separate `phone_calls` table (not mixed with form leads).
 - Re-sending the same WildJar call ID updates the row (duration, recording, status).
 - Staff can mark **Followed up** and add notes in the dashboard.
+
+## All accounts & new numbers (client self-service)
+
+See **[MULTI-ACCOUNT.md](./MULTI-ACCOUNT.md)** — how to cover Stay Connected + Same Day without one webhook per phone number, and what happens when the client adds new tracking numbers.
+
+**Summary:** Turn **filters OFF** on each WildJar company account webhook. New numbers on that account sync automatically. Same Day needs its own webhook (account `44906`) unless WildJar supports parent-account “include sub-accounts” on webhooks.

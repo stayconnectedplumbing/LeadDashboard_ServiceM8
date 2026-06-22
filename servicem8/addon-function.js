@@ -51,6 +51,48 @@ function isDuplicateNameError(message) {
   return String(message).toLowerCase().indexOf("name must be unique") !== -1;
 }
 
+var SERVICEM8_CATEGORY_UUIDS = {
+  same_day_home_services: "56ede18b-65c7-4a1f-a1cc-2420756f929b",
+  stay_connected_plumbing: "bdbbb658-6e05-4a09-aeab-1e4fcc4e61bb",
+  facebook: "0e38598c-fbfe-4f0f-93d9-21fa78f83a5b",
+};
+
+var SAME_DAY_HOSTS = [
+  "samedayhomeservices.com.au",
+  "samedayshowerrepairs.com.au",
+  "emergencyplumbingrepairs.com.au",
+];
+
+function resolveLeadCategory(source, rawPayload) {
+  rawPayload = rawPayload || {};
+  if (source === "facebook") return "facebook";
+
+  var url = String(
+    rawPayload.current_url || rawPayload.page_url || rawPayload.referer_url || "",
+  ).toLowerCase();
+  if (url.indexOf("stayconnectedplumbing.com.au") !== -1) {
+    return "stay_connected_plumbing";
+  }
+  for (var i = 0; i < SAME_DAY_HOSTS.length; i++) {
+    if (url.indexOf(SAME_DAY_HOSTS[i]) !== -1) return "same_day_home_services";
+  }
+
+  if (source === "stay_connected_plumbing") return "stay_connected_plumbing";
+  if (
+    source === "same_day_home_services" ||
+    source === "same_day_shower_repairs" ||
+    source === "emergency_plumbing_sydney"
+  ) {
+    return "same_day_home_services";
+  }
+
+  return "same_day_home_services";
+}
+
+function resolveServiceM8CategoryUuid(source, rawPayload) {
+  return SERVICEM8_CATEGORY_UUIDS[resolveLeadCategory(source, rawPayload)];
+}
+
 async function servicem8Get(accessToken, path, query) {
   var url = SERVICEM8_API + "/" + path;
   if (query) url += "?" + query;
@@ -156,6 +198,7 @@ async function createServiceM8JobFromLead(accessToken, lead) {
     company_uuid: companyUuid,
     job_description: jobDescription,
     purchase_order_number: lead.id,
+    category_uuid: resolveServiceM8CategoryUuid(lead.source, lead.raw_payload),
   };
   if (jobAddress) jobBody.job_address = jobAddress;
 

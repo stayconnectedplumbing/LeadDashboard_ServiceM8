@@ -1,3 +1,5 @@
+import { parseAustralianLocalTime } from "./australian-time.ts";
+
 type FieldEntry = { name?: string; label?: string; id?: string; value?: unknown };
 type Payload = Record<string, unknown>;
 
@@ -224,12 +226,12 @@ export function normalizeWordPressPayload(payload: Payload) {
       "project summary",
     ]);
 
-  const receivedAt = forminator
-    ? payload.entry_time ?? payload.submitted_at ?? new Date().toISOString()
-    : payload.date ??
-      payload.submitted_at ??
-      payload.created_at ??
-      new Date().toISOString();
+  const receivedAtRaw = forminator
+    ? payload.entry_time ?? payload.submitted_at
+    : payload.date ?? payload.submitted_at ?? payload.created_at;
+
+  const receivedAt =
+    parseAustralianLocalTime(receivedAtRaw) ?? new Date().toISOString();
 
   return {
     source: "wordpress" as const,

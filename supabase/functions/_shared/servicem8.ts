@@ -1,3 +1,5 @@
+import { resolveServiceM8CategoryUuid } from "./servicem8-categories.ts";
+
 const SERVICEM8_API = "https://api.servicem8.com/api_1.0";
 
 export type LeadRecord = {
@@ -188,6 +190,10 @@ export async function createServiceM8JobFromLead(
     company_uuid: companyUuid,
     job_description: jobDescription,
     purchase_order_number: lead.id,
+    category_uuid: resolveServiceM8CategoryUuid(
+      lead.source,
+      lead.raw_payload ?? {},
+    ),
   };
   if (jobAddress) jobBody.job_address = jobAddress;
 

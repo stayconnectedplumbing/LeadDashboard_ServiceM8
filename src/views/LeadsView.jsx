@@ -12,6 +12,8 @@ import {
   UserRound,
   Filter,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   X,
   Download,
@@ -30,9 +32,12 @@ import {
   CATEGORY_OPTIONS,
   formatCategoryLabel,
   getLastLeadAgeByCategory,
+  getLeadReceivedAt,
   resolveLeadCategory,
 } from "../leadCategories";
 import { formatDate } from "../utils/format";
+import { formatLeadFormAnswers } from "../utils/leadFormAnswers";
+import { endOfSydneyDay, startOfSydneyDay } from "../utils/time";
 
 function CategoryIcon({ category }) {
   if (category === "facebook") return <UserRound size={14} />;
@@ -100,6 +105,8 @@ const DEMO_LEADS = [
   },
 ];
 
+const PAGE_SIZE_OPTIONS = [50, 100, 150, 200];
+
 function normalizeLead(lead) {
   return {
     called: false,
@@ -129,10 +136,10 @@ function downloadCSV(leads) {
     "Service",
     "Message",
     "Called",
-    "Attempted",
+    "No Answer",
     "Push ServiceM8",
     "Notes",
-    "Created At",
+    "Received At",
   ];
   const rows = leads.map((lead) => [
     lead.id,
@@ -146,7 +153,7 @@ function downloadCSV(leads) {
     lead.call_attempted ? "Yes" : "No",
     isPushedToServiceM8(lead) ? "Yes" : "No",
     lead.notes || "",
-    formatDate(lead.created_at),
+    formatDate(getLeadReceivedAt(lead)),
   ]);
 
   const csvContent = [
@@ -188,6 +195,8 @@ export function LeadsView() {
   const [nowTick, setNowTick] = useState(Date.now());
   const [expandedRows, setExpandedRows] = useState({});
   const [localNotes, setLocalNotes] = useState({});
+  const [pageSize, setPageSize] = useState(50);
+  const [currentPage, setCurrentPage] = useState(1);
 
   async function loadLeads() {
     setError("");
@@ -202,7 +211,7 @@ export function LeadsView() {
     const { data, error: loadError } = await supabase
       .from("leads")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("received_at", { ascending: false });
 
     if (loadError) {
       setError(loadError.message);
@@ -253,6 +262,19 @@ export function LeadsView() {
     setLocalNotes(notes);
   }, [leads]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    searchQuery,
+    categoryFilter,
+    calledFilter,
+    attemptedFilter,
+    pushedFilter,
+    dateFrom,
+    dateTo,
+    pageSize,
+  ]);
+
   const filteredLeads = useMemo(() => {
     return leads.filter((lead) => {
       const category = resolveLeadCategory(lead.source, lead.raw_payload);
@@ -288,11 +310,11 @@ export function LeadsView() {
         (pushedFilter === "yes" && isPushedToServiceM8(lead)) ||
         (pushedFilter === "no" && !isPushedToServiceM8(lead));
 
-      const leadDate = new Date(lead.created_at);
+      const leadDate = getLeadReceivedAt(lead);
       const matchesDateFrom =
-        !dateFrom || leadDate >= new Date(`${dateFrom}T00:00:00`);
+        !dateFrom || leadDate >= startOfSydneyDay(dateFrom);
       const matchesDateTo =
-        !dateTo || leadDate <= new Date(`${dateTo}T23:59:59.999`);
+        !dateTo || leadDate <= endOfSydneyDay(dateTo);
 
       return (
         matchesSearch &&
@@ -314,6 +336,17 @@ export function LeadsView() {
     dateFrom,
     dateTo,
   ]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+
+  const paginatedLeads = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filteredLeads.slice(start, start + pageSize);
+  }, [filteredLeads, pageSize, safePage]);
+
+  const pageStart = filteredLeads.length ? (safePage - 1) * pageSize + 1 : 0;
+  const pageEnd = Math.min(safePage * pageSize, filteredLeads.length);
 
   const lastLeadByPlatform = useMemo(
     () => getLastLeadAgeByCategory(leads),
@@ -657,7 +690,7 @@ export function LeadsView() {
           </div>
 
           <div className="filter-group">
-            <label className="filter-label">Call Attempted</label>
+            <label className="filter-label">No Answer</label>
             <select
               value={attemptedFilter}
               onChange={(e) => setAttemptedFilter(e.target.value)}
@@ -759,6 +792,58 @@ export function LeadsView() {
       )}
 
       <section className="table-container">
+        <div className="table-toolbar">
+          <p className="table-toolbar-summary">
+            {loading
+              ? "Loading leads…"
+              : filteredLeads.length
+                ? `Showing ${pageStart}–${pageEnd} of ${filteredLeads.length} leads`
+                : "No leads to show"}
+          </p>
+          <div className="table-toolbar-controls">
+            <label className="table-page-size">
+              <span>Show</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="filter-select"
+                aria-label="Rows per page"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+              <span>per page</span>
+            </label>
+            <div className="table-pagination">
+              <button
+                type="button"
+                className="pagination-button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={loading || safePage <= 1}
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="pagination-status">
+                Page {safePage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                className="pagination-button"
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
+                }
+                disabled={loading || safePage >= totalPages}
+                aria-label="Next page"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="table-wrapper">
           <table className="leads-table">
             <thead>
@@ -770,10 +855,10 @@ export function LeadsView() {
                 <th>Email</th>
                 <th>Service</th>
                 <th>Called</th>
-                <th>Attempted</th>
+                <th>No Answer</th>
                 <th>Push ServiceM8</th>
                 <th>Action</th>
-                <th>Created</th>
+                <th>Received</th>
                 <th></th>
               </tr>
             </thead>
@@ -792,12 +877,13 @@ export function LeadsView() {
                   </td>
                 </tr>
               ) : (
-                filteredLeads.map((lead) => {
+                paginatedLeads.map((lead) => {
                   const category = resolveLeadCategory(
                     lead.source,
                     lead.raw_payload,
                   );
                   const pushed = isPushedToServiceM8(lead);
+                  const formAnswers = formatLeadFormAnswers(lead.raw_payload);
 
                   return (
                     <Fragment key={lead.id}>
@@ -915,7 +1001,7 @@ export function LeadsView() {
                           )}
                         </td>
                         <td className="date-cell">
-                          {formatDate(lead.created_at)}
+                          {formatDate(getLeadReceivedAt(lead))}
                         </td>
                         <td className="action-cell">
                           <button
@@ -938,42 +1024,64 @@ export function LeadsView() {
                                   <p className="lead-message">{lead.message}</p>
                                 </div>
                               )}
-                              <div className="expanded-section">
-                                <h4>Notes</h4>
-                                <div className="notes-field">
-                                  <textarea
-                                    value={localNotes[lead.id] || ""}
-                                    onChange={(e) =>
-                                      handleNoteChange(lead.id, e.target.value)
-                                    }
-                                    onBlur={() => {
-                                      if (localNotes[lead.id] !== lead.notes) {
+                              <div className="expanded-details-grid">
+                                <div className="expanded-section">
+                                  <h4>Notes</h4>
+                                  <div className="notes-field">
+                                    <textarea
+                                      value={localNotes[lead.id] || ""}
+                                      onChange={(e) =>
+                                        handleNoteChange(lead.id, e.target.value)
+                                      }
+                                      onBlur={() => {
+                                        if (localNotes[lead.id] !== lead.notes) {
+                                          updateLead(lead.id, {
+                                            notes: localNotes[lead.id] || "",
+                                          });
+                                        }
+                                      }}
+                                      rows={4}
+                                      placeholder="Add notes here..."
+                                    />
+                                    <button
+                                      className="save-button"
+                                      type="button"
+                                      onClick={() =>
                                         updateLead(lead.id, {
                                           notes: localNotes[lead.id] || "",
-                                        });
+                                        })
                                       }
-                                    }}
-                                    rows={4}
-                                    placeholder="Add notes here..."
-                                  />
-                                  <button
-                                    className="save-button"
-                                    type="button"
-                                    onClick={() =>
-                                      updateLead(lead.id, {
-                                        notes: localNotes[lead.id] || "",
-                                      })
-                                    }
-                                    disabled={savingId === lead.id}
-                                  >
-                                    {savingId === lead.id ? (
-                                      <Loader2 className="spin" />
-                                    ) : (
-                                      <Save size={16} />
-                                    )}
-                                    {savingId === lead.id ? "Saving" : "Save Notes"}
-                                  </button>
+                                      disabled={savingId === lead.id}
+                                    >
+                                      {savingId === lead.id ? (
+                                        <Loader2 className="spin" />
+                                      ) : (
+                                        <Save size={16} />
+                                      )}
+                                      {savingId === lead.id ? "Saving" : "Save Notes"}
+                                    </button>
+                                  </div>
                                 </div>
+                                {formAnswers.length > 0 && (
+                                  <div className="expanded-section">
+                                    <h4>Form answers</h4>
+                                    <dl className="form-answers-list">
+                                      {formAnswers.map((item) => (
+                                          <div
+                                            className="form-answers-row"
+                                            key={`${item.label}-${item.value}`}
+                                          >
+                                            <dt className="form-answers-label">
+                                              {item.label}
+                                            </dt>
+                                            <dd className="form-answers-value">
+                                              {item.value}
+                                            </dd>
+                                          </div>
+                                      ))}
+                                    </dl>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
