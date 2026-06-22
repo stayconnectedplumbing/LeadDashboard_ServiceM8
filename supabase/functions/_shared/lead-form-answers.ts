@@ -1,3 +1,5 @@
+export type FormAnswer = { label: string; value: string };
+
 const SKIP_FIELD_NAMES = new Set([
   "full_name",
   "name",
@@ -32,7 +34,7 @@ const SKIP_PAYLOAD_KEYS = new Set([
   "_forminator_user_ip",
 ]);
 
-function humanizeLabel(name) {
+function humanizeLabel(name: string): string {
   return String(name)
     .replace(/[_/-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -40,7 +42,12 @@ function humanizeLabel(name) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function pushAnswer(lines, label, value, seen) {
+function pushAnswer(
+  lines: FormAnswer[],
+  label: string,
+  value: unknown,
+  seen: Set<string>,
+): void {
   const text = value == null ? "" : String(value).trim();
   if (!label || !text) return;
   const key = `${label}:${text}`;
@@ -49,18 +56,22 @@ function pushAnswer(lines, label, value, seen) {
   lines.push({ label: humanizeLabel(label), value: text });
 }
 
-export function formatLeadFormAnswers(rawPayload = {}) {
+export function formatLeadFormAnswers(
+  rawPayload: Record<string, unknown> = {},
+): FormAnswer[] {
   if (!rawPayload || typeof rawPayload !== "object") return [];
 
-  const lines = [];
-  const seen = new Set();
+  const lines: FormAnswer[] = [];
+  const seen = new Set<string>();
 
   const fieldData = rawPayload.field_data;
   if (Array.isArray(fieldData)) {
     for (const entry of fieldData) {
-      const name = String(entry?.name ?? "").trim();
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as { name?: string; values?: unknown[] };
+      const name = String(record.name ?? "").trim();
       if (!name || SKIP_FIELD_NAMES.has(name.toLowerCase())) continue;
-      pushAnswer(lines, name, entry?.values?.[0], seen);
+      pushAnswer(lines, name, record.values?.[0], seen);
     }
   }
 
@@ -80,7 +91,33 @@ export function formatLeadFormAnswers(rawPayload = {}) {
   return lines;
 }
 
-export function extractAddressFromPayload(rawPayload = {}) {
+export function formatLeadFormAnswersText(
+  rawPayload: Record<string, unknown> = {},
+): string {
+  return formatLeadFormAnswers(rawPayload)
+    .map((item) => `${item.label}: ${item.value}`)
+    .join("\n");
+}
+
+function extractTopLevelAddress(payload: Record<string, unknown>): string {
+  const keys = ["suburb", "city", "location", "address", "job_address"];
+  for (const key of keys) {
+    for (const [field, value] of Object.entries(payload)) {
+      if (
+        field.toLowerCase().includes(key) &&
+        value != null &&
+        String(value).trim()
+      ) {
+        return String(value).trim();
+      }
+    }
+  }
+  return "";
+}
+
+export function extractAddressFromPayload(
+  rawPayload: Record<string, unknown> = {},
+): string {
   const answers = formatLeadFormAnswers(rawPayload);
   let suburb = "";
   let postcode = "";
@@ -102,18 +139,5 @@ export function extractAddressFromPayload(rawPayload = {}) {
   if (postcode) return postcode;
   if (address) return address;
 
-  const keys = ["suburb", "city", "location", "address", "job_address"];
-  for (const key of keys) {
-    for (const [field, value] of Object.entries(rawPayload)) {
-      if (
-        field.toLowerCase().includes(key) &&
-        value != null &&
-        String(value).trim()
-      ) {
-        return String(value).trim();
-      }
-    }
-  }
-
-  return "";
+  return extractTopLevelAddress(rawPayload);
 }

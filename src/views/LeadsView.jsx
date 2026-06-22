@@ -37,7 +37,7 @@ import {
 } from "../leadCategories";
 import { formatDate } from "../utils/format";
 import { formatLeadFormAnswers } from "../utils/leadFormAnswers";
-import { endOfSydneyDay, startOfSydneyDay } from "../utils/time";
+import { endOfSydneyDay, startOfSydneyDay, todayInSydney } from "../utils/time";
 
 function CategoryIcon({ category }) {
   if (category === "facebook") return <UserRound size={14} />;
@@ -189,9 +189,9 @@ export function LeadsView() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [calledFilter, setCalledFilter] = useState("all");
   const [attemptedFilter, setAttemptedFilter] = useState("all");
-  const [pushedFilter, setPushedFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [pushedFilter, setPushedFilter] = useState("no");
+  const [dateFrom, setDateFrom] = useState(() => todayInSydney());
+  const [dateTo, setDateTo] = useState(() => todayInSydney());
   const [nowTick, setNowTick] = useState(Date.now());
   const [expandedRows, setExpandedRows] = useState({});
   const [localNotes, setLocalNotes] = useState({});
@@ -532,13 +532,14 @@ export function LeadsView() {
   }
 
   function resetFilters() {
+    const today = todayInSydney();
     setSearchQuery("");
     setCategoryFilter("all");
     setCalledFilter("all");
     setAttemptedFilter("all");
-    setPushedFilter("all");
-    setDateFrom("");
-    setDateTo("");
+    setPushedFilter("no");
+    setDateFrom(today);
+    setDateTo(today);
   }
 
   return (

@@ -86,15 +86,18 @@ export function endOfSydneyDay(dateStr) {
   return localDateTimeInZoneToUtc(`${dateStr}T23:59:59`, DASHBOARD_TIMEZONE);
 }
 
+const sydneyDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: DASHBOARD_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+export function todayInSydney() {
+  return sydneyDateFormatter.format(new Date());
+}
+
 export function isTodayInSydney(dateValue) {
   if (!dateValue) return false;
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: DASHBOARD_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return (
-    formatter.format(new Date(dateValue)) === formatter.format(new Date())
-  );
+  return sydneyDateFormatter.format(new Date(dateValue)) === todayInSydney();
 }

@@ -16,15 +16,100 @@ function escapeFilterValue(value) {
   return String(value).replace(/'/g, "''");
 }
 
-function extractAddress(lead) {
-  var payload = lead.raw_payload || {};
+var SKIP_FIELD_NAMES = new Set([
+  "full_name", "name", "first_name", "last_name", "email",
+  "phone_number", "phone", "mobile",
+]);
+
+var SKIP_PAYLOAD_KEYS = new Set([
+  "field_data", "form_name", "form_id", "page_id", "leadgen_id", "ad_id",
+  "adgroup_id", "created_time", "id", "meta_test", "graph_fetch_error",
+  "current_url", "page_url", "referer_url", "form_title", "entry_time",
+  "form_type", "render_id", "_wp_http_referer", "_forminator_user_ip",
+]);
+
+function humanizeLabel(name) {
+  return String(name)
+    .replace(/[_/-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, function (char) { return char.toUpperCase(); });
+}
+
+function pushFormAnswer(lines, label, value, seen) {
+  var text = value == null ? "" : String(value).trim();
+  if (!label || !text) return;
+  var key = label + ":" + text;
+  if (seen.has(key)) return;
+  seen.add(key);
+  lines.push({ label: humanizeLabel(label), value: text });
+}
+
+function formatLeadFormAnswers(rawPayload) {
+  rawPayload = rawPayload || {};
+  if (typeof rawPayload !== "object") return [];
+
+  var lines = [];
+  var seen = new Set();
+  var fieldData = rawPayload.field_data;
+
+  if (Array.isArray(fieldData)) {
+    for (var i = 0; i < fieldData.length; i++) {
+      var entry = fieldData[i] || {};
+      var name = String(entry.name || "").trim();
+      if (!name || SKIP_FIELD_NAMES.has(name.toLowerCase())) continue;
+      pushFormAnswer(lines, name, entry.values && entry.values[0], seen);
+    }
+  }
+
+  for (var key in rawPayload) {
+    if (!Object.prototype.hasOwnProperty.call(rawPayload, key)) continue;
+    if (SKIP_PAYLOAD_KEYS.has(key)) continue;
+    var value = rawPayload[key];
+    if (value == null || value === "") continue;
+    if (typeof value === "object") continue;
+    if (/^(name|email|phone|textarea|text|select|hidden|number|address|url)[-_]?\d+$/i.test(key)) {
+      pushFormAnswer(lines, key, value, seen);
+      continue;
+    }
+    if (/suburb|postcode|post_code|service|message|comments|details|location|city/i.test(key)) {
+      pushFormAnswer(lines, key, value, seen);
+    }
+  }
+
+  return lines;
+}
+
+function extractAddressFromPayload(rawPayload) {
+  rawPayload = rawPayload || {};
+  var answers = formatLeadFormAnswers(rawPayload);
+  var suburb = "";
+  var postcode = "";
+  var address = "";
+  var j;
+
+  for (j = 0; j < answers.length; j++) {
+    var normalized = answers[j].label.toLowerCase();
+    if (normalized.indexOf("suburb") !== -1 || normalized.indexOf("city") !== -1) {
+      suburb = answers[j].value;
+    } else if (normalized.indexOf("postcode") !== -1 || normalized.indexOf("post code") !== -1) {
+      postcode = answers[j].value;
+    } else if (normalized.indexOf("address") !== -1 || normalized.indexOf("location") !== -1) {
+      address = answers[j].value;
+    }
+  }
+
+  if (suburb && postcode) return suburb + " " + postcode;
+  if (suburb) return suburb;
+  if (postcode) return postcode;
+  if (address) return address;
+
   var keys = ["suburb", "city", "location", "address", "job_address"];
   var field, value, i;
-
   for (i = 0; i < keys.length; i++) {
-    for (field in payload) {
-      if (!Object.prototype.hasOwnProperty.call(payload, field)) continue;
-      value = payload[field];
+    for (field in rawPayload) {
+      if (!Object.prototype.hasOwnProperty.call(rawPayload, field)) continue;
+      value = rawPayload[field];
       if (
         field.toLowerCase().indexOf(keys[i]) !== -1 &&
         value != null &&
@@ -37,9 +122,19 @@ function extractAddress(lead) {
   return "";
 }
 
+function extractAddress(lead) {
+  return extractAddressFromPayload(lead.raw_payload || {});
+}
+
 function buildJobDescription(lead) {
   var lines = [];
+  var formAnswers = formatLeadFormAnswers(lead.raw_payload || {});
+  var i;
+
   if (lead.service_requested) lines.push("Service: " + lead.service_requested);
+  for (i = 0; i < formAnswers.length; i++) {
+    lines.push(formAnswers[i].label + ": " + formAnswers[i].value);
+  }
   if (lead.message) lines.push("Message: " + lead.message);
   if (lead.notes) lines.push("Notes: " + lead.notes);
   lines.push("Lead source: " + lead.source);

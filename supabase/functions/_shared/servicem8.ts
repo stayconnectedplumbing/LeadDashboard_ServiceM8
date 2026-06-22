@@ -1,4 +1,8 @@
 import { resolveServiceM8CategoryUuid } from "./servicem8-categories.ts";
+import {
+  extractAddressFromPayload,
+  formatLeadFormAnswers,
+} from "./lead-form-answers.ts";
 
 const SERVICEM8_API = "https://api.servicem8.com/api_1.0";
 
@@ -33,25 +37,15 @@ function escapeFilterValue(value: string): string {
 }
 
 function extractAddress(lead: LeadRecord): string {
-  const payload = lead.raw_payload ?? {};
-  const keys = ["suburb", "city", "location", "address", "job_address"];
-  for (const key of keys) {
-    for (const [field, value] of Object.entries(payload)) {
-      if (
-        field.toLowerCase().includes(key) &&
-        value != null &&
-        String(value).trim()
-      ) {
-        return String(value).trim();
-      }
-    }
-  }
-  return "";
+  return extractAddressFromPayload(lead.raw_payload ?? {});
 }
 
 function buildJobDescription(lead: LeadRecord): string {
   const lines = [
     lead.service_requested ? `Service: ${lead.service_requested}` : "",
+    ...formatLeadFormAnswers(lead.raw_payload ?? {}).map(
+      (item) => `${item.label}: ${item.value}`,
+    ),
     lead.message ? `Message: ${lead.message}` : "",
     lead.notes ? `Notes: ${lead.notes}` : "",
     `Lead source: ${lead.source}`,
