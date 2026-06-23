@@ -1,9 +1,8 @@
 import { parseAustralianLocalTime } from "./utils/time.js";
 
-/** Three lead source categories — see PROJECT.md */
-
 export const CATEGORY_LABELS = {
   same_day_home_services: "Same Day Home Services",
+  same_day_shower_repairs: "Same Day Shower Repairs",
   stay_connected_plumbing: "Stay Connected Plumbing",
   facebook: "Facebook",
 };
@@ -11,33 +10,54 @@ export const CATEGORY_LABELS = {
 export const CATEGORY_OPTIONS = [
   { id: "all", label: "All Categories" },
   { id: "same_day_home_services", label: CATEGORY_LABELS.same_day_home_services },
+  { id: "same_day_shower_repairs", label: CATEGORY_LABELS.same_day_shower_repairs },
   { id: "stay_connected_plumbing", label: CATEGORY_LABELS.stay_connected_plumbing },
   { id: "facebook", label: CATEGORY_LABELS.facebook },
 ];
 
 export const PLATFORM_CATEGORIES = [
   "same_day_home_services",
+  "same_day_shower_repairs",
   "stay_connected_plumbing",
   "facebook",
 ];
 
 export const PLATFORM_SHORT_LABELS = {
   same_day_home_services: "Same Day Home Services",
+  same_day_shower_repairs: "Same Day Shower Repairs",
   stay_connected_plumbing: "Stay Connected Plumbing",
   facebook: "Facebook",
 };
 
+const SHOWER_REPAIRS_HOST = "samedayshowerrepairs.com.au";
+
 const SAME_DAY_HOSTS = [
   "samedayhomeservices.com.au",
-  "samedayshowerrepairs.com.au",
   "emergencyplumbingrepairs.com.au",
 ];
 
 function extractUrl(rawPayload) {
   if (!rawPayload || typeof rawPayload !== "object") return "";
-  return String(
+
+  const direct = String(
     rawPayload.current_url ?? rawPayload.page_url ?? rawPayload.referer_url ?? "",
-  ).toLowerCase();
+  ).trim();
+  if (direct) return direct.toLowerCase();
+
+  for (const [key, value] of Object.entries(rawPayload)) {
+    const normalized = key.toLowerCase().replace(/_/g, " ").trim();
+    if (
+      (normalized === "page url" ||
+        normalized === "pageurl" ||
+        normalized === "current url") &&
+      value != null &&
+      value !== ""
+    ) {
+      return String(value).toLowerCase();
+    }
+  }
+
+  return "";
 }
 
 export function resolveLeadCategory(source, rawPayload = {}) {
@@ -45,14 +65,15 @@ export function resolveLeadCategory(source, rawPayload = {}) {
 
   const url = extractUrl(rawPayload);
   if (url.includes("stayconnectedplumbing.com.au")) return "stay_connected_plumbing";
+  if (url.includes(SHOWER_REPAIRS_HOST)) return "same_day_shower_repairs";
   if (SAME_DAY_HOSTS.some((host) => url.includes(host))) {
     return "same_day_home_services";
   }
 
   if (source === "stay_connected_plumbing") return "stay_connected_plumbing";
+  if (source === "same_day_shower_repairs") return "same_day_shower_repairs";
   if (
     source === "same_day_home_services" ||
-    source === "same_day_shower_repairs" ||
     source === "emergency_plumbing_sydney"
   ) {
     return "same_day_home_services";

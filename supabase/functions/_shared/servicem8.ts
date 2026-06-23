@@ -41,12 +41,11 @@ function extractAddress(lead: LeadRecord): string {
 }
 
 function buildJobDescription(lead: LeadRecord): string {
+  const formAnswers = formatLeadFormAnswers(lead.raw_payload ?? {}, lead);
   const lines = [
     lead.service_requested ? `Service: ${lead.service_requested}` : "",
-    ...formatLeadFormAnswers(lead.raw_payload ?? {}).map(
-      (item) => `${item.label}: ${item.value}`,
-    ),
-    lead.message ? `Message: ${lead.message}` : "",
+    ...formAnswers.map((item) => `${item.label}: ${item.value}`),
+    lead.message && formAnswers.length === 0 ? `Message: ${lead.message}` : "",
     lead.notes ? `Notes: ${lead.notes}` : "",
     `Lead source: ${lead.source}`,
     `Lead ID: ${lead.id}`,

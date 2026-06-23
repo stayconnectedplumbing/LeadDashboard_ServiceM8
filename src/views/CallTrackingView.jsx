@@ -162,23 +162,23 @@ export function CallTrackingView() {
   ]);
 
   const stats = useMemo(() => {
-    const todayCalls = filteredCalls.filter((call) =>
+    const todayCalls = calls.filter((call) =>
       isTodayInSydney(getCallTime(call)),
     );
-    const answered = filteredCalls.filter(
+    const answered = calls.filter(
       (call) => call.call_status === "answered",
     ).length;
-    const missed = filteredCalls.filter(
+    const missed = calls.filter(
       (call) => call.call_status === "missed",
     ).length;
-    const newCallers = filteredCalls.filter(
+    const newCallers = calls.filter(
       (call) => call.first_time_caller,
     ).length;
-    const needsFollowUp = filteredCalls.filter(
+    const needsFollowUp = calls.filter(
       (call) => !call.followed_up && call.call_status !== "answered",
     ).length;
 
-    const durations = filteredCalls
+    const durations = calls
       .map((call) => call.duration_seconds)
       .filter((value) => typeof value === "number" && value > 0);
     const avgDuration = durations.length
@@ -195,7 +195,7 @@ export function CallTrackingView() {
       needsFollowUp,
       avgDuration,
     };
-  }, [filteredCalls]);
+  }, [calls]);
 
   async function updateCall(id, patch) {
     setSavingId(id);
@@ -245,11 +245,64 @@ export function CallTrackingView() {
 
   return (
     <div className="page-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">WildJar</p>
-          <h1>Call Tracking</h1>
-        </div>
+      <header className="page-top">
+        <section className="stats-grid stats-grid-compact stats-grid-wide">
+          <div className="stat-card">
+            <div className="stat-icon blue">
+              <PhoneIncoming size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Calls Today</p>
+              <p className="stat-value">{stats.today}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon green">
+              <Phone size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Answered</p>
+              <p className="stat-value">{stats.answered}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon red">
+              <PhoneMissed size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Missed</p>
+              <p className="stat-value">{stats.missed}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon purple">
+              <UserPlus size={18} />
+            </div>
+            <div>
+              <p className="stat-label">New Callers</p>
+              <p className="stat-value">{stats.newCallers}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon amber">
+              <Timer size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Avg Duration</p>
+              <p className="stat-value">{formatDuration(stats.avgDuration)}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon red">
+              <Headphones size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Needs Follow-up</p>
+              <p className="stat-value">{stats.needsFollowUp}</p>
+            </div>
+          </div>
+        </section>
+
         <div className="topbar-actions">
           {filteredCalls.length > 0 && (
             <button
@@ -278,63 +331,6 @@ export function CallTrackingView() {
           </button>
         </div>
       </header>
-
-      <section className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue">
-            <PhoneIncoming size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Calls Today</p>
-            <p className="stat-value">{stats.today}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green">
-            <Phone size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Answered</p>
-            <p className="stat-value">{stats.answered}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon red">
-            <PhoneMissed size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Missed</p>
-            <p className="stat-value">{stats.missed}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple">
-            <UserPlus size={24} />
-          </div>
-          <div>
-            <p className="stat-label">New Callers</p>
-            <p className="stat-value">{stats.newCallers}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon amber">
-            <Timer size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Avg Duration</p>
-            <p className="stat-value">{formatDuration(stats.avgDuration)}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon red">
-            <Headphones size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Needs Follow-up</p>
-            <p className="stat-value">{stats.needsFollowUp}</p>
-          </div>
-        </div>
-      </section>
 
       <section className="filters-section">
         <div className="filters-header">

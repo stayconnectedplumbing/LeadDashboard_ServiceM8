@@ -91,7 +91,7 @@ const DEMO_LEADS = [
   },
   {
     id: "demo-same-day-2",
-    source: "same_day_home_services",
+    source: "same_day_shower_repairs",
     full_name: "Emma Wilson",
     phone: "0422 333 444",
     email: "emma@test.com",
@@ -354,15 +354,15 @@ export function LeadsView() {
   );
 
   const stats = useMemo(() => {
-    const total = filteredLeads.length;
-    const pushed = filteredLeads.filter(isPushedToServiceM8).length;
-    const needsCall = filteredLeads.filter(
+    const total = leads.length;
+    const pushed = leads.filter(isPushedToServiceM8).length;
+    const needsCall = leads.filter(
       (l) => !isPushedToServiceM8(l) && !l.call_attempted,
     ).length;
-    const called = filteredLeads.filter((l) => l.called).length;
+    const called = leads.filter((l) => l.called).length;
 
     return { total, pushed, needsCall, called };
-  }, [filteredLeads]);
+  }, [leads]);
 
   async function updateLead(id, patch) {
     setSavingId(id);
@@ -544,11 +544,46 @@ export function LeadsView() {
 
   return (
     <div className="page-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Form leads</p>
-          <h1>Lead Management</h1>
-        </div>
+      <header className="page-top">
+        <section className="stats-grid stats-grid-compact">
+          <div className="stat-card">
+            <div className="stat-icon blue">
+              <ClipboardList size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Total Leads</p>
+              <p className="stat-value">{stats.total}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon red">
+              <Phone size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Needs Call</p>
+              <p className="stat-value">{stats.needsCall}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon purple">
+              <Phone size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Called</p>
+              <p className="stat-value">{stats.called}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon green">
+              <CalendarCheck size={18} />
+            </div>
+            <div>
+              <p className="stat-label">Pushed to SM8</p>
+              <p className="stat-value">{stats.pushed}</p>
+            </div>
+          </div>
+        </section>
+
         <div className="topbar-actions">
           {filteredLeads.length > 0 && (
             <button
@@ -571,48 +606,9 @@ export function LeadsView() {
         </div>
       </header>
 
-      <section className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue">
-            <ClipboardList size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Total Leads</p>
-            <p className="stat-value">{stats.total}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon red">
-            <Phone size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Needs Call</p>
-            <p className="stat-value">{stats.needsCall}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple">
-            <Phone size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Called</p>
-            <p className="stat-value">{stats.called}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green">
-            <CalendarCheck size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Pushed to SM8</p>
-            <p className="stat-value">{stats.pushed}</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="platform-last-leads">
+      <section className="platform-last-leads platform-last-leads-compact">
         <div className="platform-last-leads-header">
-          <Clock size={20} />
+          <Clock size={16} />
           <h2>Last lead by platform</h2>
         </div>
         <div className="platform-last-leads-grid">
@@ -623,7 +619,6 @@ export function LeadsView() {
             >
               <p className="platform-last-label">{platform.label}</p>
               <p className="platform-last-age">{platform.age}</p>
-              <p className="platform-last-detail">{platform.detail}</p>
             </div>
           ))}
         </div>
@@ -884,7 +879,7 @@ export function LeadsView() {
                     lead.raw_payload,
                   );
                   const pushed = isPushedToServiceM8(lead);
-                  const formAnswers = formatLeadFormAnswers(lead.raw_payload);
+                  const formAnswers = formatLeadFormAnswers(lead.raw_payload, lead);
 
                   return (
                     <Fragment key={lead.id}>
@@ -1019,7 +1014,7 @@ export function LeadsView() {
                         <tr className="expanded-row">
                           <td colSpan="12">
                             <div className="expanded-content">
-                              {lead.message && (
+                              {lead.message && formAnswers.length === 0 && (
                                 <div className="expanded-section">
                                   <h4>Message</h4>
                                   <p className="lead-message">{lead.message}</p>
