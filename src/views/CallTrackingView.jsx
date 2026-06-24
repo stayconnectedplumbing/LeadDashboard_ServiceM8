@@ -29,7 +29,7 @@ import {
 } from "../callTracking";
 import { StatsDateFilters } from "../components/StatsDateFilters";
 import { formatDate, formatDuration } from "../utils/format";
-import { isInSydneyDateRange } from "../utils/time";
+import { isInSydneyDateRange, todayInSydney } from "../utils/time";
 
 function getCallTime(call) {
   return call.call_started_at || call.created_at;
@@ -45,8 +45,8 @@ export function CallTrackingView() {
   const [brandFilter, setBrandFilter] = useState("all");
   const [followedUpFilter, setFollowedUpFilter] = useState("all");
   const [firstTimeFilter, setFirstTimeFilter] = useState("all");
-  const [statsDateFrom, setStatsDateFrom] = useState("");
-  const [statsDateTo, setStatsDateTo] = useState("");
+  const [statsDateFrom, setStatsDateFrom] = useState(() => todayInSydney());
+  const [statsDateTo, setStatsDateTo] = useState(() => todayInSydney());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expandedRows, setExpandedRows] = useState({});

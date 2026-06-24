@@ -4,6 +4,7 @@
 
 const DASHBOARD_URL = "https://leaddashboard-production-adcb.up.railway.app";
 const SERVICEM8_API = "https://api.servicem8.com/api_1.0";
+const GENERAL_WORK_TEMPLATE_MATCH = /general\s+work/i;
 
 function splitName(fullName) {
   var parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
@@ -24,9 +25,32 @@ var SKIP_PAYLOAD_KEYS = new Set([
   "webhook_secret", "_webhook_secret",
 ]);
 
+function decodeHtmlEntities(text) {
+  return String(text)
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, function (_, code) {
+      return String.fromCharCode(Number(code));
+    })
+    .replace(/&#x([0-9a-f]+);/gi, function (_, code) {
+      return String.fromCharCode(parseInt(code, 16));
+    })
+    .replace(/&amp;/gi, "&");
+}
+
+function formatDisplayText(text) {
+  return decodeHtmlEntities(text)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function humanizeLabel(name) {
-  return String(name)
-    .replace(/[_/-]+/g, " ")
+  return formatDisplayText(name)
+    .replace(/[-/]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, function (char) { return char.toUpperCase(); });
@@ -148,7 +172,7 @@ function pushFormAnswer(lines, label, value, seen, valueSeen, lead, options) {
   if (seen.has(key)) return;
   seen.add(key);
   valueSeen.add(valueKey);
-  lines.push({ label: humanizeLabel(label), value: text });
+  lines.push({ label: humanizeLabel(label), value: formatDisplayText(text) });
 }
 
 function collectForminatorAnswers(rawPayload, lead) {
@@ -435,6 +459,22 @@ async function servicem8Get(accessToken, path, query) {
   return Array.isArray(parsed) ? parsed : [];
 }
 
+async function servicem8Update(accessToken, path, body) {
+  var response = await fetch(SERVICEM8_API + "/" + path, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  var responseText = await response.text();
+  if (!response.ok) {
+    throw new Error("ServiceM8 POST " + path + " failed (" + response.status + "): " + responseText);
+  }
+}
+
 async function servicem8Post(accessToken, path, body) {
   var response = await fetch(SERVICEM8_API + "/" + path, {
     method: "POST",
@@ -456,6 +496,106 @@ async function servicem8Post(accessToken, path, body) {
   }
 
   return recordUuid;
+}
+
+function isTemplateActive(template) {
+  var active = template.active;
+  return active !== 0 && active !== "0";
+}
+
+function templateNameRank(name) {
+  var trimmed = String(name || "").trim();
+  if (/^(\d+\.\s*)?general work$/i.test(trimmed)) return 0;
+  if (/^general work\b/i.test(trimmed)) return 1;
+  return 2;
+}
+
+async function resolveGeneralWorkTemplateCandidates(accessToken) {
+  var templates = await servicem8Get(accessToken, "jobtemplate.json");
+  var matches = templates
+    .filter(isTemplateActive)
+    .filter(function (template) {
+      var name = template.name ? String(template.name) : "";
+      return GENERAL_WORK_TEMPLATE_MATCH.test(name);
+    })
+    .sort(function (left, right) {
+      var leftName = String(left.name || "");
+      var rightName = String(right.name || "");
+      var rankDiff = templateNameRank(leftName) - templateNameRank(rightName);
+      if (rankDiff !== 0) return rankDiff;
+      return leftName.localeCompare(rightName);
+    });
+
+  var uuids = [];
+  for (var i = 0; i < matches.length; i++) {
+    if (matches[i].uuid) uuids.push(matches[i].uuid);
+  }
+
+  if (uuids.length === 0) {
+    throw new Error(
+      'Active General Work job template not found. Enable Job Templates in ServiceM8 and ensure an active template includes "General Work" in the name.'
+    );
+  }
+
+  return uuids;
+}
+
+async function servicem8CreateJobFromTemplate(accessToken, templateUuid, body) {
+  var path = "jobtemplate/" + templateUuid + "/job.json";
+  var response = await fetch(SERVICEM8_API + "/" + path, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  var responseText = await response.text();
+  if (!response.ok) {
+    throw new Error("ServiceM8 " + path + " failed (" + response.status + "): " + responseText);
+  }
+
+  var headerUuid = response.headers.get("x-record-uuid");
+  if (headerUuid) return headerUuid;
+
+  if (responseText) {
+    var parsed = JSON.parse(responseText);
+    if (parsed.jobUUID) return parsed.jobUUID;
+    if (parsed.job_uuid) return parsed.job_uuid;
+  }
+
+  throw new Error("ServiceM8 " + path + " did not return a job UUID");
+}
+
+function isTemplateNotFoundError(message) {
+  return message.indexOf("404") !== -1 && message.indexOf("Job template not found") !== -1;
+}
+
+async function createJobFromGeneralWorkTemplate(accessToken, templateBody) {
+  var templateUuids = await resolveGeneralWorkTemplateCandidates(accessToken);
+  var lastError = null;
+
+  for (var i = 0; i < templateUuids.length; i++) {
+    try {
+      return await servicem8CreateJobFromTemplate(
+        accessToken,
+        templateUuids[i],
+        templateBody
+      );
+    } catch (error) {
+      var message = error instanceof Error ? error.message : String(error);
+      if (isTemplateNotFoundError(message)) {
+        lastError = error instanceof Error ? error : new Error(message);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError || new Error(
+    'Active General Work job template not found. Enable Job Templates in ServiceM8 and ensure an active template includes "General Work" in the name.'
+  );
 }
 
 async function findCompanyByName(accessToken, name) {
@@ -517,16 +657,18 @@ async function createServiceM8JobFromLead(accessToken, lead) {
 
   var companyUuid = await findOrCreateCompany(accessToken, companyName);
 
-  var jobBody = {
-    status: "Quote",
+  var templateBody = {
     company_uuid: companyUuid,
     job_description: jobDescription,
+  };
+  if (jobAddress) templateBody.job_address = jobAddress;
+
+  var jobUuid = await createJobFromGeneralWorkTemplate(accessToken, templateBody);
+
+  await servicem8Update(accessToken, "job/" + jobUuid + ".json", {
     purchase_order_number: lead.id,
     category_uuid: resolveServiceM8CategoryUuid(lead.source, lead.raw_payload),
-  };
-  if (jobAddress) jobBody.job_address = jobAddress;
-
-  var jobUuid = await servicem8Post(accessToken, "job.json", jobBody);
+  });
 
   if (first || last || lead.email || lead.phone) {
     await servicem8Post(accessToken, "jobcontact.json", {

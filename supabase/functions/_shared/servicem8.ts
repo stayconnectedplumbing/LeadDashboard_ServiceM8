@@ -5,6 +5,7 @@ import {
 } from "./lead-form-answers.ts";
 
 const SERVICEM8_API = "https://api.servicem8.com/api_1.0";
+const GENERAL_WORK_TEMPLATE_MATCH = /general\s+work/i;
 
 export type LeadRecord = {
   id: string;
@@ -82,6 +83,28 @@ async function servicem8Get(
   return Array.isArray(parsed) ? parsed : [];
 }
 
+async function servicem8Update(
+  accessToken: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const response = await fetch(`${SERVICEM8_API}/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `ServiceM8 POST ${path} failed (${response.status}): ${responseText}`,
+    );
+  }
+}
+
 async function servicem8Post(
   accessToken: string,
   path: string,
@@ -142,6 +165,123 @@ async function findOrCreateCompany(
   }
 }
 
+function isTemplateActive(template: Record<string, unknown>): boolean {
+  const active = template.active;
+  return active !== 0 && active !== "0";
+}
+
+function templateNameRank(name: string): number {
+  const trimmed = name.trim();
+  if (/^(\d+\.\s*)?general work$/i.test(trimmed)) return 0;
+  if (/^general work\b/i.test(trimmed)) return 1;
+  return 2;
+}
+
+async function resolveGeneralWorkTemplateCandidates(
+  accessToken: string,
+): Promise<string[]> {
+  const fromEnv = Deno.env.get("SERVICEM8_JOB_TEMPLATE_UUID")?.trim();
+  if (fromEnv) return [fromEnv];
+
+  const templates = await servicem8Get(accessToken, "jobtemplate.json");
+  const matches = templates
+    .filter(isTemplateActive)
+    .filter((template) => {
+      const name = typeof template.name === "string" ? template.name : "";
+      return GENERAL_WORK_TEMPLATE_MATCH.test(name);
+    })
+    .sort((left, right) => {
+      const leftName = String(left.name || "");
+      const rightName = String(right.name || "");
+      const rankDiff =
+        templateNameRank(leftName) - templateNameRank(rightName);
+      if (rankDiff !== 0) return rankDiff;
+      return leftName.localeCompare(rightName);
+    });
+
+  const uuids = matches
+    .map((template) => template.uuid)
+    .filter((uuid): uuid is string => typeof uuid === "string");
+
+  if (uuids.length === 0) {
+    throw new Error(
+      'Active General Work job template not found. Enable Job Templates in ServiceM8 and ensure an active template includes "General Work" in the name.',
+    );
+  }
+
+  return uuids;
+}
+
+async function servicem8CreateJobFromTemplate(
+  accessToken: string,
+  templateUuid: string,
+  body: Record<string, unknown>,
+): Promise<string> {
+  const path = `jobtemplate/${templateUuid}/job.json`;
+  const response = await fetch(`${SERVICEM8_API}/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `ServiceM8 ${path} failed (${response.status}): ${responseText}`,
+    );
+  }
+
+  const headerUuid = response.headers.get("x-record-uuid");
+  if (headerUuid) return headerUuid;
+
+  if (responseText) {
+    const parsed = JSON.parse(responseText) as Record<string, unknown>;
+    if (typeof parsed.jobUUID === "string") return parsed.jobUUID;
+    if (typeof parsed.job_uuid === "string") return parsed.job_uuid;
+  }
+
+  throw new Error(`ServiceM8 ${path} did not return a job UUID`);
+}
+
+function isTemplateNotFoundError(message: string): boolean {
+  return message.includes("404") && message.includes("Job template not found");
+}
+
+async function createJobFromGeneralWorkTemplate(
+  accessToken: string,
+  templateBody: Record<string, unknown>,
+): Promise<string> {
+  const templateUuids = await resolveGeneralWorkTemplateCandidates(accessToken);
+  let lastError: Error | null = null;
+
+  for (const templateUuid of templateUuids) {
+    try {
+      return await servicem8CreateJobFromTemplate(
+        accessToken,
+        templateUuid,
+        templateBody,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isTemplateNotFoundError(message)) {
+        lastError = error instanceof Error ? error : new Error(message);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error(
+      'Active General Work job template not found. Enable Job Templates in ServiceM8 and ensure an active template includes "General Work" in the name.',
+    )
+  );
+}
+
 async function findJobByLeadId(
   accessToken: string,
   leadId: string,
@@ -178,19 +318,24 @@ export async function createServiceM8JobFromLead(
 
   const companyUuid = await findOrCreateCompany(accessToken, companyName);
 
-  const jobBody: Record<string, unknown> = {
-    status: "Quote",
+  const templateBody: Record<string, unknown> = {
     company_uuid: companyUuid,
     job_description: jobDescription,
+  };
+  if (jobAddress) templateBody.job_address = jobAddress;
+
+  const jobUuid = await createJobFromGeneralWorkTemplate(
+    accessToken,
+    templateBody,
+  );
+
+  await servicem8Update(accessToken, `job/${jobUuid}.json`, {
     purchase_order_number: lead.id,
     category_uuid: resolveServiceM8CategoryUuid(
       lead.source,
       lead.raw_payload ?? {},
     ),
-  };
-  if (jobAddress) jobBody.job_address = jobAddress;
-
-  const jobUuid = await servicem8Post(accessToken, "job.json", jobBody);
+  });
 
   if (first || last || lead.email || lead.phone) {
     await servicem8Post(accessToken, "jobcontact.json", {

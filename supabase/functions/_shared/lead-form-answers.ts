@@ -58,9 +58,30 @@ type PushAnswerOptions = {
   skipMessageMatch?: boolean;
 };
 
+function decodeHtmlEntities(text: unknown): string {
+  return String(text)
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) =>
+      String.fromCharCode(parseInt(code, 16)),
+    )
+    .replace(/&amp;/gi, "&");
+}
+
+function formatDisplayText(text: unknown): string {
+  return decodeHtmlEntities(text)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function humanizeLabel(name: string): string {
-  return String(name)
-    .replace(/[_/-]+/g, " ")
+  return formatDisplayText(name)
+    .replace(/[-/]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -198,7 +219,7 @@ function pushAnswer(
 
   seen.add(key);
   valueSeen.add(valueKey);
-  lines.push({ label: humanizeLabel(label), value: text });
+  lines.push({ label: humanizeLabel(label), value: formatDisplayText(text) });
 }
 
 function collectForminatorAnswers(

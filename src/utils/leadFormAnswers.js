@@ -42,9 +42,30 @@ const SKIP_PAYLOAD_KEYS = new Set([
 const FORMINATOR_FIELD_KEY =
   /^(name|email|phone|textarea|text|select|radio|checkbox|hidden|number|address|url)[-_]?\d+$/i;
 
+function decodeHtmlEntities(text) {
+  return String(text)
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) =>
+      String.fromCharCode(parseInt(code, 16)),
+    )
+    .replace(/&amp;/gi, "&");
+}
+
+function formatDisplayText(text) {
+  return decodeHtmlEntities(text)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function humanizeLabel(name) {
-  return String(name)
-    .replace(/[_/-]+/g, " ")
+  return formatDisplayText(name)
+    .replace(/[-/]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -167,7 +188,7 @@ function pushAnswer(lines, label, value, seen, valueSeen, lead, options = {}) {
 
   seen.add(key);
   valueSeen.add(valueKey);
-  lines.push({ label: humanizeLabel(label), value: text });
+  lines.push({ label: humanizeLabel(label), value: formatDisplayText(text) });
 }
 
 function collectForminatorAnswers(rawPayload, lead) {

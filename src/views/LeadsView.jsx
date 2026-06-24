@@ -190,8 +190,8 @@ export function LeadsView() {
   const [calledFilter, setCalledFilter] = useState("no");
   const [attemptedFilter, setAttemptedFilter] = useState("no");
   const [pushedFilter, setPushedFilter] = useState("no");
-  const [statsDateFrom, setStatsDateFrom] = useState("");
-  const [statsDateTo, setStatsDateTo] = useState("");
+  const [statsDateFrom, setStatsDateFrom] = useState(() => todayInSydney());
+  const [statsDateTo, setStatsDateTo] = useState(() => todayInSydney());
   const [dateFrom, setDateFrom] = useState(() => todayInSydney());
   const [dateTo, setDateTo] = useState(() => todayInSydney());
   const [nowTick, setNowTick] = useState(Date.now());
