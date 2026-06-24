@@ -20,7 +20,6 @@ import {
   CheckCircle2,
   CircleAlert,
   ExternalLink,
-  Eye,
 } from "lucide-react";
 import { hasSupabaseConfig, supabase } from "../supabaseClient";
 import {
@@ -37,7 +36,8 @@ import {
 } from "../leadCategories";
 import { formatDate } from "../utils/format";
 import { formatLeadFormAnswers } from "../utils/leadFormAnswers";
-import { endOfSydneyDay, startOfSydneyDay, todayInSydney } from "../utils/time";
+import { StatsDateFilters } from "../components/StatsDateFilters";
+import { isInSydneyDateRange, todayInSydney } from "../utils/time";
 
 function CategoryIcon({ category }) {
   if (category === "facebook") return <UserRound size={14} />;
@@ -187,9 +187,11 @@ export function LeadsView() {
   const [pushErrors, setPushErrors] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [calledFilter, setCalledFilter] = useState("all");
-  const [attemptedFilter, setAttemptedFilter] = useState("all");
+  const [calledFilter, setCalledFilter] = useState("no");
+  const [attemptedFilter, setAttemptedFilter] = useState("no");
   const [pushedFilter, setPushedFilter] = useState("no");
+  const [statsDateFrom, setStatsDateFrom] = useState("");
+  const [statsDateTo, setStatsDateTo] = useState("");
   const [dateFrom, setDateFrom] = useState(() => todayInSydney());
   const [dateTo, setDateTo] = useState(() => todayInSydney());
   const [nowTick, setNowTick] = useState(Date.now());
@@ -310,11 +312,11 @@ export function LeadsView() {
         (pushedFilter === "yes" && isPushedToServiceM8(lead)) ||
         (pushedFilter === "no" && !isPushedToServiceM8(lead));
 
-      const leadDate = getLeadReceivedAt(lead);
-      const matchesDateFrom =
-        !dateFrom || leadDate >= startOfSydneyDay(dateFrom);
-      const matchesDateTo =
-        !dateTo || leadDate <= endOfSydneyDay(dateTo);
+      const matchesDate = isInSydneyDateRange(
+        getLeadReceivedAt(lead),
+        dateFrom,
+        dateTo,
+      );
 
       return (
         matchesSearch &&
@@ -322,8 +324,7 @@ export function LeadsView() {
         matchesCalled &&
         matchesAttempted &&
         matchesPushed &&
-        matchesDateFrom &&
-        matchesDateTo
+        matchesDate
       );
     });
   }, [
@@ -353,16 +354,22 @@ export function LeadsView() {
     [leads, nowTick],
   );
 
+  const statsLeads = useMemo(() => {
+    return leads.filter((lead) =>
+      isInSydneyDateRange(getLeadReceivedAt(lead), statsDateFrom, statsDateTo),
+    );
+  }, [leads, statsDateFrom, statsDateTo]);
+
   const stats = useMemo(() => {
-    const total = leads.length;
-    const pushed = leads.filter(isPushedToServiceM8).length;
-    const needsCall = leads.filter(
+    const total = statsLeads.length;
+    const pushed = statsLeads.filter(isPushedToServiceM8).length;
+    const needsCall = statsLeads.filter(
       (l) => !isPushedToServiceM8(l) && !l.call_attempted,
     ).length;
-    const called = leads.filter((l) => l.called).length;
+    const called = statsLeads.filter((l) => l.called).length;
 
     return { total, pushed, needsCall, called };
-  }, [leads]);
+  }, [statsLeads]);
 
   async function updateLead(id, patch) {
     setSavingId(id);
@@ -535,8 +542,8 @@ export function LeadsView() {
     const today = todayInSydney();
     setSearchQuery("");
     setCategoryFilter("all");
-    setCalledFilter("all");
-    setAttemptedFilter("all");
+    setCalledFilter("no");
+    setAttemptedFilter("no");
     setPushedFilter("no");
     setDateFrom(today);
     setDateTo(today);
@@ -545,7 +552,14 @@ export function LeadsView() {
   return (
     <div className="page-shell">
       <header className="page-top">
-        <section className="stats-grid stats-grid-compact">
+        <StatsDateFilters
+          dateFrom={statsDateFrom}
+          dateTo={statsDateTo}
+          onDateFromChange={setStatsDateFrom}
+          onDateToChange={setStatsDateTo}
+        />
+        <div className="page-top-main">
+          <section className="stats-grid stats-grid-compact">
           <div className="stat-card">
             <div className="stat-icon blue">
               <ClipboardList size={18} />
@@ -582,27 +596,28 @@ export function LeadsView() {
               <p className="stat-value">{stats.pushed}</p>
             </div>
           </div>
-        </section>
+          </section>
 
-        <div className="topbar-actions">
-          {filteredLeads.length > 0 && (
+          <div className="topbar-actions">
+            {filteredLeads.length > 0 && (
+              <button
+                className="text-button"
+                onClick={() => downloadCSV(filteredLeads)}
+                type="button"
+              >
+                <Download size={18} />
+                Export CSV
+              </button>
+            )}
             <button
-              className="text-button"
-              onClick={() => downloadCSV(filteredLeads)}
-              type="button"
+              className="icon-button"
+              onClick={loadLeads}
+              aria-label="Refresh leads"
+              disabled={loading}
             >
-              <Download size={18} />
-              Export CSV
+              {loading ? <Loader2 className="spin" /> : <RefreshCcw />}
             </button>
-          )}
-          <button
-            className="icon-button"
-            onClick={loadLeads}
-            aria-label="Refresh leads"
-            disabled={loading}
-          >
-            {loading ? <Loader2 className="spin" /> : <RefreshCcw />}
-          </button>
+          </div>
         </div>
       </header>
 
@@ -853,22 +868,21 @@ export function LeadsView() {
                 <th>Called</th>
                 <th>No Answer</th>
                 <th>Push ServiceM8</th>
-                <th>Action</th>
-                <th>Received</th>
                 <th></th>
+                <th>Received</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="12" className="table-loading">
+                  <td colSpan="11" className="table-loading">
                     <Loader2 className="spin" />
                     Loading leads...
                   </td>
                 </tr>
               ) : filteredLeads.length === 0 ? (
                 <tr>
-                  <td colSpan="12" className="table-empty">
+                  <td colSpan="11" className="table-empty">
                     No leads found
                   </td>
                 </tr>
@@ -889,6 +903,8 @@ export function LeadsView() {
                             className="expand-btn"
                             onClick={() => toggleExpand(lead.id)}
                             type="button"
+                            title="View details"
+                            aria-label="View details"
                           >
                             {expandedRows[lead.id] ? (
                               <ChevronUp size={16} />
@@ -999,20 +1015,10 @@ export function LeadsView() {
                         <td className="date-cell">
                           {formatDate(getLeadReceivedAt(lead))}
                         </td>
-                        <td className="action-cell">
-                          <button
-                            className="expand-btn"
-                            onClick={() => toggleExpand(lead.id)}
-                            type="button"
-                            title="View details"
-                          >
-                            <Eye size={16} />
-                          </button>
-                        </td>
                       </tr>
                       {expandedRows[lead.id] && (
                         <tr className="expanded-row">
-                          <td colSpan="12">
+                          <td colSpan="11">
                             <div className="expanded-content">
                               {lead.message && formAnswers.length === 0 && (
                                 <div className="expanded-section">

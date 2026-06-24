@@ -51,7 +51,12 @@ const SKIP_PAYLOAD_KEYS = new Set([
 ]);
 
 const FORMINATOR_FIELD_KEY =
-  /^(name|email|phone|textarea|text|select|radio|hidden|number|address|url)[-_]?\d+$/i;
+  /^(name|email|phone|textarea|text|select|radio|checkbox|hidden|number|address|url)[-_]?\d+$/i;
+
+type PushAnswerOptions = {
+  allowLongText?: boolean;
+  skipMessageMatch?: boolean;
+};
 
 function humanizeLabel(name: string): string {
   return String(name)
@@ -89,10 +94,14 @@ function isNumericId(value: unknown): boolean {
   return /^\d{4,}$/.test(String(value).trim());
 }
 
-function isHumanReadableAnswer(value: unknown): boolean {
+function isHumanReadableAnswer(
+  value: unknown,
+  options: { allowLongText?: boolean } = {},
+): boolean {
   const text = String(value).trim();
+  const maxLength = options.allowLongText ? 5000 : 250;
   if (!text) return false;
-  if (text.length < 2 || text.length > 250) return false;
+  if (text.length < 2 || text.length > maxLength) return false;
   if (isUrl(text)) return false;
   if (isTrackingToken(text)) return false;
   if (isNumericId(text)) return false;
@@ -115,7 +124,11 @@ function sortedForminatorKeys(rawPayload: Record<string, unknown>, prefix: strin
     });
 }
 
-function valueMatchesLead(value: unknown, lead: LeadFormContext | null): boolean {
+function valueMatchesLead(
+  value: unknown,
+  lead: LeadFormContext | null,
+  options: { skipMessageMatch?: boolean } = {},
+): boolean {
   if (!lead) return false;
 
   const text = String(value).trim();
@@ -142,7 +155,7 @@ function valueMatchesLead(value: unknown, lead: LeadFormContext | null): boolean
   ) {
     return true;
   }
-  if (lead.message) {
+  if (lead.message && !options.skipMessageMatch) {
     const message = String(lead.message).trim().toLowerCase();
     if (lower === message) return true;
     if (message.includes(`suburb: ${lower}`) || message.includes(`postcode: ${lower}`)) {
@@ -168,11 +181,14 @@ function pushAnswer(
   seen: Set<string>,
   valueSeen: Set<string>,
   lead: LeadFormContext | null,
+  options: PushAnswerOptions = {},
 ): void {
   const text = value == null ? "" : String(value).trim();
   if (!label || !text) return;
-  if (!isHumanReadableAnswer(text)) return;
-  if (valueMatchesLead(text, lead)) return;
+  if (!isHumanReadableAnswer(text, { allowLongText: options.allowLongText })) return;
+  if (valueMatchesLead(text, lead, { skipMessageMatch: options.skipMessageMatch })) {
+    return;
+  }
 
   const valueKey = text.toLowerCase();
   if (valueSeen.has(valueKey)) return;
@@ -219,6 +235,10 @@ function collectForminatorAnswers(
     if (lines.length > before) hasService = true;
   }
 
+  for (const key of sortedForminatorKeys(rawPayload, "checkbox")) {
+    pushAnswer(lines, "Services", rawPayload[key], seen, valueSeen, lead);
+  }
+
   for (const key of sortedForminatorKeys(rawPayload, "address")) {
     pushAnswer(lines, "Address", rawPayload[key], seen, valueSeen, lead);
   }
@@ -228,6 +248,13 @@ function collectForminatorAnswers(
     if (/^\d{4}$/.test(text)) {
       pushAnswer(lines, "Postcode", text, seen, valueSeen, lead);
     }
+  }
+
+  for (const key of sortedForminatorKeys(rawPayload, "textarea")) {
+    pushAnswer(lines, "Message", rawPayload[key], seen, valueSeen, lead, {
+      allowLongText: true,
+      skipMessageMatch: true,
+    });
   }
 
   return lines;

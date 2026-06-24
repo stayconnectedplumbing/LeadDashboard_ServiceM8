@@ -39,7 +39,7 @@ var SKIP_FIELD_NAMES = new Set([
 ]);
 
 var FORMINATOR_FIELD_KEY =
-  /^(name|email|phone|textarea|text|select|radio|hidden|number|address|url)[-_]?\d+$/i;
+  /^(name|email|phone|textarea|text|select|radio|checkbox|hidden|number|address|url)[-_]?\d+$/i;
 
 function normalizePhone(value) {
   return String(value).replace(/\D/g, "");
@@ -63,10 +63,11 @@ function isNumericId(value) {
   return /^\d{4,}$/.test(String(value).trim());
 }
 
-function isHumanReadableAnswer(value) {
+function isHumanReadableAnswer(value, allowLongText) {
   var text = String(value).trim();
+  var maxLength = allowLongText ? 5000 : 250;
   if (!text) return false;
-  if (text.length < 2 || text.length > 250) return false;
+  if (text.length < 2 || text.length > maxLength) return false;
   if (isUrl(text)) return false;
   if (isTrackingToken(text)) return false;
   if (isNumericId(text)) return false;
@@ -94,7 +95,7 @@ function sortedForminatorKeys(rawPayload, prefix) {
     });
 }
 
-function valueMatchesLead(value, lead) {
+function valueMatchesLead(value, lead, skipMessageMatch) {
   if (!lead) return false;
   var text = String(value).trim();
   if (!text) return false;
@@ -115,7 +116,7 @@ function valueMatchesLead(value, lead) {
   ) {
     return true;
   }
-  if (lead.message) {
+  if (lead.message && !skipMessageMatch) {
     var message = String(lead.message).trim().toLowerCase();
     if (lower === message) return true;
     if (message.indexOf("suburb: " + lower) !== -1 || message.indexOf("postcode: " + lower) !== -1) {
@@ -133,11 +134,12 @@ function valueMatchesLead(value, lead) {
   return false;
 }
 
-function pushFormAnswer(lines, label, value, seen, valueSeen, lead) {
+function pushFormAnswer(lines, label, value, seen, valueSeen, lead, options) {
+  options = options || {};
   var text = value == null ? "" : String(value).trim();
   if (!label || !text) return;
-  if (!isHumanReadableAnswer(text)) return;
-  if (valueMatchesLead(text, lead)) return;
+  if (!isHumanReadableAnswer(text, options.allowLongText)) return;
+  if (valueMatchesLead(text, lead, options.skipMessageMatch)) return;
 
   var valueKey = text.toLowerCase();
   if (valueSeen.has(valueKey)) return;
@@ -187,6 +189,11 @@ function collectForminatorAnswers(rawPayload, lead) {
     if (lines.length > before) hasService = true;
   }
 
+  keys = sortedForminatorKeys(rawPayload, "checkbox");
+  for (i = 0; i < keys.length; i++) {
+    pushFormAnswer(lines, "Services", rawPayload[keys[i]], seen, valueSeen, lead);
+  }
+
   keys = sortedForminatorKeys(rawPayload, "address");
   for (i = 0; i < keys.length; i++) {
     pushFormAnswer(lines, "Address", rawPayload[keys[i]], seen, valueSeen, lead);
@@ -198,6 +205,14 @@ function collectForminatorAnswers(rawPayload, lead) {
     if (/^\d{4}$/.test(numberText)) {
       pushFormAnswer(lines, "Postcode", numberText, seen, valueSeen, lead);
     }
+  }
+
+  keys = sortedForminatorKeys(rawPayload, "textarea");
+  for (i = 0; i < keys.length; i++) {
+    pushFormAnswer(lines, "Message", rawPayload[keys[i]], seen, valueSeen, lead, {
+      allowLongText: true,
+      skipMessageMatch: true,
+    });
   }
 
   return lines;

@@ -27,8 +27,9 @@ import {
   normalizePhoneCall,
   statusBadgeClass,
 } from "../callTracking";
+import { StatsDateFilters } from "../components/StatsDateFilters";
 import { formatDate, formatDuration } from "../utils/format";
-import { endOfSydneyDay, isTodayInSydney, startOfSydneyDay } from "../utils/time";
+import { isInSydneyDateRange } from "../utils/time";
 
 function getCallTime(call) {
   return call.call_started_at || call.created_at;
@@ -44,6 +45,8 @@ export function CallTrackingView() {
   const [brandFilter, setBrandFilter] = useState("all");
   const [followedUpFilter, setFollowedUpFilter] = useState("all");
   const [firstTimeFilter, setFirstTimeFilter] = useState("all");
+  const [statsDateFrom, setStatsDateFrom] = useState("");
+  const [statsDateTo, setStatsDateTo] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expandedRows, setExpandedRows] = useState({});
@@ -134,11 +137,11 @@ export function CallTrackingView() {
         (firstTimeFilter === "yes" && call.first_time_caller) ||
         (firstTimeFilter === "no" && call.first_time_caller === false);
 
-      const callDate = new Date(getCallTime(call));
-      const matchesDateFrom =
-        !dateFrom || callDate >= startOfSydneyDay(dateFrom);
-      const matchesDateTo =
-        !dateTo || callDate <= endOfSydneyDay(dateTo);
+      const matchesDate = isInSydneyDateRange(
+        getCallTime(call),
+        dateFrom,
+        dateTo,
+      );
 
       return (
         matchesSearch &&
@@ -146,8 +149,7 @@ export function CallTrackingView() {
         matchesBrand &&
         matchesFollowedUp &&
         matchesFirstTime &&
-        matchesDateFrom &&
-        matchesDateTo
+        matchesDate
       );
     });
   }, [
@@ -161,24 +163,28 @@ export function CallTrackingView() {
     dateTo,
   ]);
 
-  const stats = useMemo(() => {
-    const todayCalls = calls.filter((call) =>
-      isTodayInSydney(getCallTime(call)),
+  const statsCalls = useMemo(() => {
+    return calls.filter((call) =>
+      isInSydneyDateRange(getCallTime(call), statsDateFrom, statsDateTo),
     );
-    const answered = calls.filter(
+  }, [calls, statsDateFrom, statsDateTo]);
+
+  const stats = useMemo(() => {
+    const total = statsCalls.length;
+    const answered = statsCalls.filter(
       (call) => call.call_status === "answered",
     ).length;
-    const missed = calls.filter(
+    const missed = statsCalls.filter(
       (call) => call.call_status === "missed",
     ).length;
-    const newCallers = calls.filter(
+    const newCallers = statsCalls.filter(
       (call) => call.first_time_caller,
     ).length;
-    const needsFollowUp = calls.filter(
+    const needsFollowUp = statsCalls.filter(
       (call) => !call.followed_up && call.call_status !== "answered",
     ).length;
 
-    const durations = calls
+    const durations = statsCalls
       .map((call) => call.duration_seconds)
       .filter((value) => typeof value === "number" && value > 0);
     const avgDuration = durations.length
@@ -188,14 +194,14 @@ export function CallTrackingView() {
       : 0;
 
     return {
-      today: todayCalls.length,
+      total,
       answered,
       missed,
       newCallers,
       needsFollowUp,
       avgDuration,
     };
-  }, [calls]);
+  }, [statsCalls]);
 
   async function updateCall(id, patch) {
     setSavingId(id);
@@ -246,14 +252,21 @@ export function CallTrackingView() {
   return (
     <div className="page-shell">
       <header className="page-top">
-        <section className="stats-grid stats-grid-compact stats-grid-wide">
+        <StatsDateFilters
+          dateFrom={statsDateFrom}
+          dateTo={statsDateTo}
+          onDateFromChange={setStatsDateFrom}
+          onDateToChange={setStatsDateTo}
+        />
+        <div className="page-top-main">
+          <section className="stats-grid stats-grid-compact stats-grid-wide">
           <div className="stat-card">
             <div className="stat-icon blue">
               <PhoneIncoming size={18} />
             </div>
             <div>
-              <p className="stat-label">Calls Today</p>
-              <p className="stat-value">{stats.today}</p>
+              <p className="stat-label">Total Calls</p>
+              <p className="stat-value">{stats.total}</p>
             </div>
           </div>
           <div className="stat-card">
@@ -301,34 +314,35 @@ export function CallTrackingView() {
               <p className="stat-value">{stats.needsFollowUp}</p>
             </div>
           </div>
-        </section>
+          </section>
 
-        <div className="topbar-actions">
-          {filteredCalls.length > 0 && (
+          <div className="topbar-actions">
+            {filteredCalls.length > 0 && (
+              <button
+                className="text-button"
+                onClick={() =>
+                  downloadCallsCSV(
+                    filteredCalls,
+                    formatDate,
+                    formatDuration,
+                    formatCallStatus,
+                  )
+                }
+                type="button"
+              >
+                <Download size={18} />
+                Export CSV
+              </button>
+            )}
             <button
-              className="text-button"
-              onClick={() =>
-                downloadCallsCSV(
-                  filteredCalls,
-                  formatDate,
-                  formatDuration,
-                  formatCallStatus,
-                )
-              }
-              type="button"
+              className="icon-button"
+              onClick={loadCalls}
+              aria-label="Refresh calls"
+              disabled={loading}
             >
-              <Download size={18} />
-              Export CSV
+              {loading ? <Loader2 className="spin" /> : <RefreshCcw />}
             </button>
-          )}
-          <button
-            className="icon-button"
-            onClick={loadCalls}
-            aria-label="Refresh calls"
-            disabled={loading}
-          >
-            {loading ? <Loader2 className="spin" /> : <RefreshCcw />}
-          </button>
+          </div>
         </div>
       </header>
 

@@ -97,6 +97,41 @@ export function todayInSydney() {
   return sydneyDateFormatter.format(new Date());
 }
 
+function formatSydneyDateLabel(dateStr) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-AU", {
+    timeZone: DASHBOARD_TIMEZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
+export function formatStatsDateRange(dateFrom, dateTo) {
+  if (!dateFrom && !dateTo) return "All time";
+
+  const today = todayInSydney();
+  if (dateFrom === today && dateTo === today) return "Today";
+
+  if (dateFrom && dateTo) {
+    if (dateFrom === dateTo) return formatSydneyDateLabel(dateFrom);
+    return `${formatSydneyDateLabel(dateFrom)} – ${formatSydneyDateLabel(dateTo)}`;
+  }
+
+  if (dateFrom) return `From ${formatSydneyDateLabel(dateFrom)}`;
+  return `Until ${formatSydneyDateLabel(dateTo)}`;
+}
+
+export function isInSydneyDateRange(dateValue, dateFrom, dateTo) {
+  if (!dateValue) return false;
+  const instant = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(instant.getTime())) return false;
+
+  if (dateFrom && instant < startOfSydneyDay(dateFrom)) return false;
+  if (dateTo && instant > endOfSydneyDay(dateTo)) return false;
+  return true;
+}
+
 export function isTodayInSydney(dateValue) {
   if (!dateValue) return false;
   return sydneyDateFormatter.format(new Date(dateValue)) === todayInSydney();
