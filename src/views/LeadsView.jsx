@@ -189,7 +189,7 @@ export function LeadsView() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [calledFilter, setCalledFilter] = useState("no");
   const [attemptedFilter, setAttemptedFilter] = useState("no");
-  const [pushedFilter, setPushedFilter] = useState("no");
+  const [pushedFilter, setPushedFilter] = useState("all");
   const [statsDateFrom, setStatsDateFrom] = useState(() => todayInSydney());
   const [statsDateTo, setStatsDateTo] = useState(() => todayInSydney());
   const [dateFrom, setDateFrom] = useState(() => todayInSydney());
@@ -544,7 +544,7 @@ export function LeadsView() {
     setCategoryFilter("all");
     setCalledFilter("no");
     setAttemptedFilter("no");
-    setPushedFilter("no");
+    setPushedFilter("all");
     setDateFrom(today);
     setDateTo(today);
   }
