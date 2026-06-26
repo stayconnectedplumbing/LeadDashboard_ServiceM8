@@ -369,24 +369,43 @@ function extractAddress(lead) {
   return extractAddressFromPayload(lead.raw_payload || {});
 }
 
-function buildJobDescription(lead) {
-  var lines = [];
-  var formAnswers = formatLeadFormAnswers(lead.raw_payload || {}, lead);
-  var i;
+function extractServiceRequiredForJob(rawPayload, lead) {
+  var fromFieldData = fieldDataValue(rawPayload, [
+    "service_required",
+    "service_requested",
+    "service",
+  ]);
+  if (fromFieldData) return formatDisplayText(fromFieldData);
 
-  if (lead.service_requested) {
-    lines.push("Service: " + formatDisplayText(lead.service_requested));
+  if (isForminatorPayload(rawPayload)) {
+    var prefixes = ["select", "radio", "hidden"];
+    var p;
+    var keys;
+    var k;
+    for (p = 0; p < prefixes.length; p++) {
+      keys = sortedForminatorKeys(rawPayload, prefixes[p]);
+      for (k = 0; k < keys.length; k++) {
+        var text = String(rawPayload[keys[k]] || "").trim();
+        if (text && isHumanReadableAnswer(text)) {
+          return formatDisplayText(text);
+        }
+      }
+    }
   }
-  for (i = 0; i < formAnswers.length; i++) {
-    lines.push(formAnswers[i].label + ": " + formAnswers[i].value);
+
+  var serviceRequested = lead && lead.service_requested ? String(lead.service_requested).trim() : "";
+  var formName = String(rawPayload.form_name || "").trim();
+  if (serviceRequested && serviceRequested !== formName) {
+    return formatDisplayText(serviceRequested);
   }
-  if (lead.message && formAnswers.length === 0) {
-    lines.push("Message: " + formatDisplayText(lead.message));
-  }
-  if (lead.notes) lines.push("Notes: " + formatDisplayText(lead.notes));
-  lines.push("Lead source: " + lead.source);
-  lines.push("Lead ID: " + lead.id);
-  return lines.join("\n") || "New lead from dashboard";
+
+  return "";
+}
+
+function buildJobDescription(lead) {
+  var service = extractServiceRequiredForJob(lead.raw_payload || {}, lead);
+  if (!service) return "New lead from dashboard";
+  return "Service Required: " + service;
 }
 
 function isDuplicateNameError(message) {

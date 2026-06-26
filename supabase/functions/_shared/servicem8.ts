@@ -1,8 +1,7 @@
 import { resolveServiceM8CategoryUuid } from "./servicem8-categories.ts";
 import {
   extractAddressFromPayload,
-  formatDisplayText,
-  formatLeadFormAnswers,
+  extractServiceRequiredForJob,
 } from "./lead-form-answers.ts";
 
 const SERVICEM8_API = "https://api.servicem8.com/api_1.0";
@@ -42,20 +41,9 @@ function extractAddress(lead: LeadRecord): string {
 }
 
 function buildJobDescription(lead: LeadRecord): string {
-  const formAnswers = formatLeadFormAnswers(lead.raw_payload ?? {}, lead);
-  const lines = [
-    lead.service_requested
-      ? `Service: ${formatDisplayText(lead.service_requested)}`
-      : "",
-    ...formAnswers.map((item) => `${item.label}: ${item.value}`),
-    lead.message && formAnswers.length === 0
-      ? `Message: ${formatDisplayText(lead.message)}`
-      : "",
-    lead.notes ? `Notes: ${formatDisplayText(lead.notes)}` : "",
-    `Lead source: ${lead.source}`,
-    `Lead ID: ${lead.id}`,
-  ].filter(Boolean);
-  return lines.join("\n") || "New lead from dashboard";
+  const service = extractServiceRequiredForJob(lead.raw_payload ?? {}, lead);
+  if (!service) return "New lead from dashboard";
+  return `Service Required: ${service}`;
 }
 
 function isDuplicateNameError(message: string): boolean {

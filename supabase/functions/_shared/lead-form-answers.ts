@@ -373,6 +373,37 @@ export function formatLeadFormAnswers(
   return collectGenericAnswers(rawPayload, lead);
 }
 
+export function extractServiceRequiredForJob(
+  rawPayload: Record<string, unknown> = {},
+  lead: LeadFormContext | null = null,
+): string {
+  const fromFieldData = fieldDataValue(rawPayload, [
+    "service_required",
+    "service_requested",
+    "service",
+  ]);
+  if (fromFieldData) return formatDisplayText(fromFieldData);
+
+  if (isForminatorPayload(rawPayload)) {
+    for (const prefix of ["select", "radio", "hidden"]) {
+      for (const key of sortedForminatorKeys(rawPayload, prefix)) {
+        const text = String(rawPayload[key] ?? "").trim();
+        if (text && isHumanReadableAnswer(text)) {
+          return formatDisplayText(text);
+        }
+      }
+    }
+  }
+
+  const serviceRequested = lead?.service_requested?.trim() ?? "";
+  const formName = String(rawPayload.form_name ?? "").trim();
+  if (serviceRequested && serviceRequested !== formName) {
+    return formatDisplayText(serviceRequested);
+  }
+
+  return "";
+}
+
 export function formatLeadFormAnswersText(
   rawPayload: Record<string, unknown> = {},
   lead: LeadFormContext | null = null,

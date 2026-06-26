@@ -1,11 +1,21 @@
 import { ClipboardList, PhoneCall } from "lucide-react";
+import { hasSupabaseConfig } from "../supabaseClient";
+import { LeadNotifications } from "./LeadNotifications";
 
 const NAV_ITEMS = [
   { id: "leads", label: "Leads", icon: ClipboardList },
   { id: "calls", label: "Call Tracking", icon: PhoneCall },
 ];
 
-export function Sidebar({ activeView, onNavigate }) {
+export function Sidebar({
+  activeView,
+  onNavigate,
+  notifications,
+  unreadNotificationCount,
+  onMarkAllNotificationsRead,
+  onClearAllNotifications,
+  onNotificationSelect,
+}) {
   return (
     <nav className="top-nav">
       <div className="top-nav-inner">
@@ -27,6 +37,18 @@ export function Sidebar({ activeView, onNavigate }) {
             );
           })}
         </div>
+
+        {hasSupabaseConfig && (
+          <div className="top-nav-actions">
+            <LeadNotifications
+              notifications={notifications}
+              unreadCount={unreadNotificationCount}
+              onMarkAllRead={onMarkAllNotificationsRead}
+              onClearAll={onClearAllNotifications}
+              onSelect={onNotificationSelect}
+            />
+          </div>
+        )}
       </div>
     </nav>
   );

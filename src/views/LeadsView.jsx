@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarCheck,
   Clock,
@@ -17,6 +17,7 @@ import {
   ChevronUp,
   X,
   Download,
+  Bell,
   CheckCircle2,
   CircleAlert,
   ExternalLink,
@@ -180,7 +181,7 @@ function downloadCSV(leads) {
   document.body.removeChild(link);
 }
 
-export function LeadsView() {
+export function LeadsView({ focusLeadRef }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
@@ -251,12 +252,50 @@ export function LeadsView() {
   useEffect(() => {
     if (!hasSupabaseConfig) return undefined;
 
+    function handleNewLead(lead) {
+      const normalized = normalizeLead(lead);
+
+      setLeads((prev) => {
+        if (prev.some((item) => item.id === normalized.id)) {
+          return prev;
+        }
+        return [normalized, ...prev];
+      });
+
+      setToast({
+        type: "info",
+        title: "New lead",
+        message: `${normalized.full_name || "Someone"} — ${formatCategoryLabel(normalized.source, normalized.raw_payload)}`,
+      });
+    }
+
     const channel = supabase
       .channel("lead-dashboard")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "leads" },
-        () => loadLeads(),
+        { event: "INSERT", schema: "public", table: "leads" },
+        (payload) => {
+          if (payload.new) handleNewLead(payload.new);
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "leads" },
+        (payload) => {
+          if (!payload.new) return;
+          const updated = normalizeLead(payload.new);
+          setLeads((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item)),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "leads" },
+        (payload) => {
+          if (!payload.old?.id) return;
+          setLeads((prev) => prev.filter((item) => item.id !== payload.old.id));
+        },
       )
       .subscribe();
 
@@ -357,6 +396,42 @@ export function LeadsView() {
 
   const pageStart = filteredLeads.length ? (safePage - 1) * pageSize + 1 : 0;
   const pageEnd = Math.min(safePage * pageSize, filteredLeads.length);
+
+  const focusLeadFromNotification = useCallback(
+    (notification) => {
+      const index = filteredLeads.findIndex(
+        (lead) => lead.id === notification.leadId,
+      );
+      if (index === -1) {
+        setToast({
+          type: "warning",
+          title: "Lead not visible",
+          message: "This lead is hidden by your current filters.",
+        });
+        return;
+      }
+
+      const page = Math.floor(index / pageSize) + 1;
+      setCurrentPage(page);
+      setExpandedRows((prev) => ({ ...prev, [notification.leadId]: true }));
+
+      window.setTimeout(() => {
+        document
+          .getElementById(`lead-row-${notification.leadId}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+    },
+    [filteredLeads, pageSize],
+  );
+
+  useEffect(() => {
+    if (!focusLeadRef) return undefined;
+
+    focusLeadRef.current = focusLeadFromNotification;
+    return () => {
+      focusLeadRef.current = null;
+    };
+  }, [focusLeadRef, focusLeadFromNotification]);
 
   const lastLeadByPlatform = useMemo(
     () => getLastLeadAgeByCategory(leads),
@@ -780,6 +855,8 @@ export function LeadsView() {
           <div className="toast-icon">
             {toast.type === "success" ? (
               <CheckCircle2 size={20} />
+            ) : toast.type === "info" ? (
+              <Bell size={20} />
             ) : (
               <CircleAlert size={20} />
             )}
@@ -905,7 +982,10 @@ export function LeadsView() {
 
                   return (
                     <Fragment key={lead.id}>
-                      <tr className={pushed ? "pushed" : ""}>
+                      <tr
+                        id={`lead-row-${lead.id}`}
+                        className={pushed ? "pushed" : ""}
+                      >
                         <td className="expand-cell">
                           <button
                             className="expand-btn"
