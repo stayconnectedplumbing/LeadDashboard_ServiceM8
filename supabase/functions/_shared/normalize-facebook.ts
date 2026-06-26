@@ -1,3 +1,5 @@
+import { formatDisplayText } from "./lead-form-answers.ts";
+
 export type FacebookLeadgenChange = {
   leadgen_id: string;
   page_id?: string;
@@ -30,7 +32,8 @@ function field(fields: FieldEntry[], names: string[]): string {
   const found = fields.find((entry) =>
     wanted.includes(String(entry.name ?? "").toLowerCase())
   );
-  return found?.values?.[0]?.trim() ?? "";
+  const raw = found?.values?.[0]?.trim() ?? "";
+  return raw ? formatDisplayText(raw) : "";
 }
 
 export function isMetaTestLeadgenId(leadgenId: string): boolean {
@@ -150,7 +153,11 @@ export function normalizeFacebookLead(
     ? String(lead.created_time)
     : new Date().toISOString();
 
-  const serviceFromFields = field(fields, ["service", "service_requested"]);
+  const serviceFromFields = field(fields, [
+    "service",
+    "service_requested",
+    "service_required",
+  ]);
   const serviceRequested = serviceFromFields ||
     (options?.form_name?.trim() || "") ||
     null;

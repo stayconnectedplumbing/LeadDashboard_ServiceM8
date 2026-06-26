@@ -26,6 +26,9 @@ import {
   isInServiceM8Iframe,
   normalizePushResult,
   pushLeadViaServiceM8Bridge,
+  reconcileLeadServiceM8Link,
+  reconcileUnlinkedLeads,
+  syncServiceM8Link,
 } from "../servicem8Push";
 import {
   CATEGORY_OPTIONS,
@@ -218,7 +221,13 @@ export function LeadsView() {
     if (loadError) {
       setError(loadError.message);
     } else {
-      setLeads((data || []).map(normalizeLead));
+      const loadedLeads = (data || []).map(normalizeLead);
+      setLeads(loadedLeads);
+      reconcileUnlinkedLeads(loadedLeads, (syncedLead) => {
+        setLeads((prev) =>
+          prev.map((item) => (item.id === syncedLead.id ? syncedLead : item)),
+        );
+      });
     }
 
     setLoading(false);
@@ -396,22 +405,13 @@ export function LeadsView() {
   async function persistPushToSupabase(leadId, patch) {
     if (!hasSupabaseConfig) return { ok: true };
 
-    const { error: updateError } = await supabase
-      .from("leads")
-      .update(patch)
-      .eq("id", leadId);
-
-    if (!updateError) return { ok: true };
-
-    const { error: retryError } = await supabase
-      .from("leads")
-      .update(patch)
-      .eq("id", leadId);
-
-    return {
-      ok: !retryError,
-      error: retryError?.message || updateError.message,
-    };
+    try {
+      await syncServiceM8Link(leadId, patch.servicem8_job_uuid);
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message };
+    }
   }
 
   async function refreshLeadFromSupabase(leadId) {
@@ -437,7 +437,15 @@ export function LeadsView() {
     });
 
     try {
-      const currentLead = (await refreshLeadFromSupabase(lead.id)) || lead;
+      let currentLead = (await refreshLeadFromSupabase(lead.id)) || lead;
+
+      const reconciled = await reconcileLeadServiceM8Link(currentLead);
+      if (reconciled.synced) {
+        currentLead = reconciled.lead;
+        setLeads((prev) =>
+          prev.map((item) => (item.id === lead.id ? currentLead : item)),
+        );
+      }
 
       if (isPushedToServiceM8(currentLead)) {
         setLeads((prev) =>

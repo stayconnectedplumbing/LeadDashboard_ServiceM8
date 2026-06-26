@@ -5,7 +5,7 @@
   "supportURL": "https://leaddashboard-production-adcb.up.railway.app",
   "supportEmail": "info@stayconnectedplumbing.com.au",
   "oauth": {
-    "scope": "create_jobs manage_jobs manage_job_contacts manage_customers read_jobs read_customers"
+    "scope": "create_jobs manage_job_contacts manage_customers read_jobs read_customers"
   },
   "menuItems": [
     {

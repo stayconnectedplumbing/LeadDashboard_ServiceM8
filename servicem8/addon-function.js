@@ -4,7 +4,6 @@
 
 const DASHBOARD_URL = "https://leaddashboard-production-adcb.up.railway.app";
 const SERVICEM8_API = "https://api.servicem8.com/api_1.0";
-const GENERAL_WORK_TEMPLATE_MATCH = /general\s+work/i;
 
 function splitName(fullName) {
   var parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
@@ -51,6 +50,7 @@ function formatDisplayText(text) {
 function humanizeLabel(name) {
   return formatDisplayText(name)
     .replace(/[-/]+/g, " ")
+    .replace(/\?+$/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, function (char) { return char.toUpperCase(); });
@@ -59,6 +59,7 @@ function humanizeLabel(name) {
 var SKIP_FIELD_NAMES = new Set([
   "full_name", "name", "first_name", "last_name", "email",
   "phone_number", "phone", "mobile", "service", "service_requested",
+  "service_required", "post_code", "postcode",
   "message", "comments", "details",
 ]);
 
@@ -361,12 +362,16 @@ function buildJobDescription(lead) {
   var formAnswers = formatLeadFormAnswers(lead.raw_payload || {}, lead);
   var i;
 
-  if (lead.service_requested) lines.push("Service: " + lead.service_requested);
+  if (lead.service_requested) {
+    lines.push("Service: " + formatDisplayText(lead.service_requested));
+  }
   for (i = 0; i < formAnswers.length; i++) {
     lines.push(formAnswers[i].label + ": " + formAnswers[i].value);
   }
-  if (lead.message && formAnswers.length === 0) lines.push("Message: " + lead.message);
-  if (lead.notes) lines.push("Notes: " + lead.notes);
+  if (lead.message && formAnswers.length === 0) {
+    lines.push("Message: " + formatDisplayText(lead.message));
+  }
+  if (lead.notes) lines.push("Notes: " + formatDisplayText(lead.notes));
   lines.push("Lead source: " + lead.source);
   lines.push("Lead ID: " + lead.id);
   return lines.join("\n") || "New lead from dashboard";
@@ -459,22 +464,6 @@ async function servicem8Get(accessToken, path, query) {
   return Array.isArray(parsed) ? parsed : [];
 }
 
-async function servicem8Update(accessToken, path, body) {
-  var response = await fetch(SERVICEM8_API + "/" + path, {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + accessToken,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  var responseText = await response.text();
-  if (!response.ok) {
-    throw new Error("ServiceM8 POST " + path + " failed (" + response.status + "): " + responseText);
-  }
-}
-
 async function servicem8Post(accessToken, path, body) {
   var response = await fetch(SERVICEM8_API + "/" + path, {
     method: "POST",
@@ -496,106 +485,6 @@ async function servicem8Post(accessToken, path, body) {
   }
 
   return recordUuid;
-}
-
-function isTemplateActive(template) {
-  var active = template.active;
-  return active !== 0 && active !== "0";
-}
-
-function templateNameRank(name) {
-  var trimmed = String(name || "").trim();
-  if (/^(\d+\.\s*)?general work$/i.test(trimmed)) return 0;
-  if (/^general work\b/i.test(trimmed)) return 1;
-  return 2;
-}
-
-async function resolveGeneralWorkTemplateCandidates(accessToken) {
-  var templates = await servicem8Get(accessToken, "jobtemplate.json");
-  var matches = templates
-    .filter(isTemplateActive)
-    .filter(function (template) {
-      var name = template.name ? String(template.name) : "";
-      return GENERAL_WORK_TEMPLATE_MATCH.test(name);
-    })
-    .sort(function (left, right) {
-      var leftName = String(left.name || "");
-      var rightName = String(right.name || "");
-      var rankDiff = templateNameRank(leftName) - templateNameRank(rightName);
-      if (rankDiff !== 0) return rankDiff;
-      return leftName.localeCompare(rightName);
-    });
-
-  var uuids = [];
-  for (var i = 0; i < matches.length; i++) {
-    if (matches[i].uuid) uuids.push(matches[i].uuid);
-  }
-
-  if (uuids.length === 0) {
-    throw new Error(
-      'Active General Work job template not found. Enable Job Templates in ServiceM8 and ensure an active template includes "General Work" in the name.'
-    );
-  }
-
-  return uuids;
-}
-
-async function servicem8CreateJobFromTemplate(accessToken, templateUuid, body) {
-  var path = "jobtemplate/" + templateUuid + "/job.json";
-  var response = await fetch(SERVICEM8_API + "/" + path, {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + accessToken,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  var responseText = await response.text();
-  if (!response.ok) {
-    throw new Error("ServiceM8 " + path + " failed (" + response.status + "): " + responseText);
-  }
-
-  var headerUuid = response.headers.get("x-record-uuid");
-  if (headerUuid) return headerUuid;
-
-  if (responseText) {
-    var parsed = JSON.parse(responseText);
-    if (parsed.jobUUID) return parsed.jobUUID;
-    if (parsed.job_uuid) return parsed.job_uuid;
-  }
-
-  throw new Error("ServiceM8 " + path + " did not return a job UUID");
-}
-
-function isTemplateNotFoundError(message) {
-  return message.indexOf("404") !== -1 && message.indexOf("Job template not found") !== -1;
-}
-
-async function createJobFromGeneralWorkTemplate(accessToken, templateBody) {
-  var templateUuids = await resolveGeneralWorkTemplateCandidates(accessToken);
-  var lastError = null;
-
-  for (var i = 0; i < templateUuids.length; i++) {
-    try {
-      return await servicem8CreateJobFromTemplate(
-        accessToken,
-        templateUuids[i],
-        templateBody
-      );
-    } catch (error) {
-      var message = error instanceof Error ? error.message : String(error);
-      if (isTemplateNotFoundError(message)) {
-        lastError = error instanceof Error ? error : new Error(message);
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  throw lastError || new Error(
-    'Active General Work job template not found. Enable Job Templates in ServiceM8 and ensure an active template includes "General Work" in the name.'
-  );
 }
 
 async function findCompanyByName(accessToken, name) {
@@ -657,18 +546,16 @@ async function createServiceM8JobFromLead(accessToken, lead) {
 
   var companyUuid = await findOrCreateCompany(accessToken, companyName);
 
-  var templateBody = {
+  var jobBody = {
+    status: "Quote",
     company_uuid: companyUuid,
     job_description: jobDescription,
-  };
-  if (jobAddress) templateBody.job_address = jobAddress;
-
-  var jobUuid = await createJobFromGeneralWorkTemplate(accessToken, templateBody);
-
-  await servicem8Update(accessToken, "job/" + jobUuid + ".json", {
     purchase_order_number: lead.id,
     category_uuid: resolveServiceM8CategoryUuid(lead.source, lead.raw_payload),
-  });
+  };
+  if (jobAddress) jobBody.job_address = jobAddress;
+
+  var jobUuid = await servicem8Post(accessToken, "job.json", jobBody);
 
   if (first || last || lead.email || lead.phone) {
     await servicem8Post(accessToken, "jobcontact.json", {
@@ -690,6 +577,32 @@ async function createServiceM8JobFromLead(accessToken, lead) {
 }
 
 exports.handler = async function (event) {
+  if (event.eventName === "lookup_lead_job") {
+    var lookupToken = event.auth && event.auth.accessToken;
+    if (!lookupToken) {
+      return { eventResponse: JSON.stringify({ error: "Missing ServiceM8 access token" }) };
+    }
+
+    var leadId = event.eventArgs && event.eventArgs.lead_id;
+    if (!leadId) {
+      return { eventResponse: JSON.stringify({ error: "lead_id is required" }) };
+    }
+
+    try {
+      var existingUuid = await findJobByLeadId(lookupToken, leadId);
+      return {
+        eventResponse: JSON.stringify({
+          ok: true,
+          job_uuid: existingUuid,
+          job_url: existingUuid ? "https://go.servicem8.com/openjob/" + existingUuid : null,
+        }),
+      };
+    } catch (lookupError) {
+      var lookupMessage = lookupError instanceof Error ? lookupError.message : String(lookupError);
+      return { eventResponse: JSON.stringify({ error: lookupMessage }) };
+    }
+  }
+
   if (event.eventName === "push_lead_to_job") {
     var accessToken = event.auth && event.auth.accessToken;
     if (!accessToken) {
@@ -733,26 +646,30 @@ exports.handler = async function (event) {
     "var client = SMClient.init();" +
     "client.resizeWindow(1400, 900);" +
     "window.addEventListener(\"message\", function (event) {" +
-    "  if (!event.data || event.data.type !== \"PUSH_LEAD\") return;" +
+    "  if (!event.data || !event.data.requestId) return;" +
+    "  function reply(resultType, payload) {" +
+    "    event.source.postMessage(Object.assign({ type: resultType, requestId: event.data.requestId }, payload), event.origin);" +
+    "  }" +
+    "  function parseResult(result) {" +
+    "    var parsed = result;" +
+    "    if (typeof result === \"string\") {" +
+    "      try { parsed = JSON.parse(result); } catch (e) { parsed = { raw: result }; }" +
+    "    }" +
+    "    if (parsed && parsed.eventResponse) {" +
+    "      try { parsed = JSON.parse(parsed.eventResponse); } catch (e2) {}" +
+    "    }" +
+    "    return parsed;" +
+    "  }" +
+    "  if (event.data.type === \"LOOKUP_LEAD\") {" +
+    "    client.invoke(\"lookup_lead_job\", { lead_id: event.data.payload.lead_id })" +
+    "      .then(function (result) { reply(\"LOOKUP_LEAD_RESULT\", { result: parseResult(result) }); })" +
+    "      .catch(function (error) { reply(\"LOOKUP_LEAD_RESULT\", { error: error && error.message ? error.message : String(error) }); });" +
+    "    return;" +
+    "  }" +
+    "  if (event.data.type !== \"PUSH_LEAD\") return;" +
     "  client.invoke(\"push_lead_to_job\", { lead: event.data.payload })" +
-    "    .then(function (result) {" +
-    "      var parsed = result;" +
-    "      if (typeof result === \"string\") {" +
-    "        try { parsed = JSON.parse(result); } catch (e) { parsed = { raw: result }; }" +
-    "      }" +
-    "      event.source.postMessage({" +
-    "        type: \"PUSH_LEAD_RESULT\"," +
-    "        requestId: event.data.requestId," +
-    "        result: parsed" +
-    "      }, event.origin);" +
-    "    })" +
-    "    .catch(function (error) {" +
-    "      event.source.postMessage({" +
-    "        type: \"PUSH_LEAD_RESULT\"," +
-    "        requestId: event.data.requestId," +
-    "        error: error && error.message ? error.message : String(error)" +
-    "      }, event.origin);" +
-    "    });" +
+    "    .then(function (result) { reply(\"PUSH_LEAD_RESULT\", { result: parseResult(result) }); })" +
+    "    .catch(function (error) { reply(\"PUSH_LEAD_RESULT\", { error: error && error.message ? error.message : String(error) }); });" +
     "});" +
     "</script>" +
     "<style>" +

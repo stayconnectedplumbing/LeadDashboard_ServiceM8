@@ -20,6 +20,9 @@ const SKIP_FIELD_NAMES = new Set([
   "mobile",
   "service",
   "service_requested",
+  "service_required",
+  "post_code",
+  "postcode",
   "message",
   "comments",
   "details",
@@ -79,9 +82,12 @@ function formatDisplayText(text: unknown): string {
     .trim();
 }
 
+export { formatDisplayText };
+
 function humanizeLabel(name: string): string {
   return formatDisplayText(name)
     .replace(/[-/]+/g, " ")
+    .replace(/\?+$/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
