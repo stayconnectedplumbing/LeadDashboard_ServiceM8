@@ -9,12 +9,21 @@ const SKIP_FIELD_NAMES = new Set([
   "mobile",
   "service",
   "service_requested",
-  "service_required",
-  "post_code",
-  "postcode",
   "message",
   "comments",
   "details",
+]);
+
+/** Facebook field_data: only hide contact fields already shown in the table. */
+const FACEBOOK_CONTACT_FIELDS = new Set([
+  "full_name",
+  "name",
+  "first_name",
+  "last_name",
+  "email",
+  "phone_number",
+  "phone",
+  "mobile",
 ]);
 
 const SKIP_PAYLOAD_KEYS = new Set([
@@ -102,7 +111,11 @@ function isTrackingToken(value) {
 }
 
 function isNumericId(value) {
-  return /^\d{4,}$/.test(String(value).trim());
+  return /^\d{5,}$/.test(String(value).trim());
+}
+
+function isPostcodeField(label) {
+  return /^(post_code|postcode|zip|postal_code)$/i.test(String(label).trim());
 }
 
 function isHumanReadableAnswer(value, options = {}) {
@@ -181,8 +194,17 @@ function valueMatchesLead(value, lead, options = {}) {
 function pushAnswer(lines, label, value, seen, valueSeen, lead, options = {}) {
   const text = value == null ? "" : String(value).trim();
   if (!label || !text) return;
-  if (!isHumanReadableAnswer(text, { allowLongText: options.allowLongText })) return;
-  if (valueMatchesLead(text, lead, { skipMessageMatch: options.skipMessageMatch })) {
+  const isPostcode = isPostcodeField(label) && /^\d{4}$/.test(text);
+  if (
+    !isHumanReadableAnswer(text, { allowLongText: options.allowLongText }) &&
+    !isPostcode
+  ) {
+    return;
+  }
+  if (
+    lead &&
+    valueMatchesLead(text, lead, { skipMessageMatch: options.skipMessageMatch })
+  ) {
     return;
   }
 
@@ -194,7 +216,10 @@ function pushAnswer(lines, label, value, seen, valueSeen, lead, options = {}) {
 
   seen.add(key);
   valueSeen.add(valueKey);
-  lines.push({ label: humanizeLabel(label), value: formatDisplayText(text) });
+  lines.push({
+    label: humanizeLabel(label),
+    value: isPostcode ? text : formatDisplayText(text),
+  });
 }
 
 function collectForminatorAnswers(rawPayload, lead) {
@@ -263,8 +288,8 @@ function collectFacebookAnswers(rawPayload, lead) {
 
   for (const entry of fieldData) {
     const name = String(entry?.name ?? "").trim();
-    if (!name || SKIP_FIELD_NAMES.has(name.toLowerCase())) continue;
-    pushAnswer(lines, name, entry?.values?.[0], seen, valueSeen, lead);
+    if (!name || FACEBOOK_CONTACT_FIELDS.has(name.toLowerCase())) continue;
+    pushAnswer(lines, name, entry?.values?.[0], seen, valueSeen, null);
   }
 
   return lines;

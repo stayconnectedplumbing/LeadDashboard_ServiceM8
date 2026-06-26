@@ -59,8 +59,12 @@ function humanizeLabel(name) {
 var SKIP_FIELD_NAMES = new Set([
   "full_name", "name", "first_name", "last_name", "email",
   "phone_number", "phone", "mobile", "service", "service_requested",
-  "service_required", "post_code", "postcode",
   "message", "comments", "details",
+]);
+
+var FACEBOOK_CONTACT_FIELDS = new Set([
+  "full_name", "name", "first_name", "last_name", "email",
+  "phone_number", "phone", "mobile",
 ]);
 
 var FORMINATOR_FIELD_KEY =
@@ -85,7 +89,11 @@ function isTrackingToken(value) {
 }
 
 function isNumericId(value) {
-  return /^\d{4,}$/.test(String(value).trim());
+  return /^\d{5,}$/.test(String(value).trim());
+}
+
+function isPostcodeField(label) {
+  return /^(post_code|postcode|zip|postal_code)$/i.test(String(label).trim());
 }
 
 function isHumanReadableAnswer(value, allowLongText) {
@@ -163,8 +171,9 @@ function pushFormAnswer(lines, label, value, seen, valueSeen, lead, options) {
   options = options || {};
   var text = value == null ? "" : String(value).trim();
   if (!label || !text) return;
-  if (!isHumanReadableAnswer(text, options.allowLongText)) return;
-  if (valueMatchesLead(text, lead, options.skipMessageMatch)) return;
+  var isPostcode = isPostcodeField(label) && /^\d{4}$/.test(text);
+  if (!isHumanReadableAnswer(text, options.allowLongText) && !isPostcode) return;
+  if (lead && valueMatchesLead(text, lead, options.skipMessageMatch)) return;
 
   var valueKey = text.toLowerCase();
   if (valueSeen.has(valueKey)) return;
@@ -173,7 +182,10 @@ function pushFormAnswer(lines, label, value, seen, valueSeen, lead, options) {
   if (seen.has(key)) return;
   seen.add(key);
   valueSeen.add(valueKey);
-  lines.push({ label: humanizeLabel(label), value: formatDisplayText(text) });
+  lines.push({
+    label: humanizeLabel(label),
+    value: isPostcode ? text : formatDisplayText(text),
+  });
 }
 
 function collectForminatorAnswers(rawPayload, lead) {
@@ -255,8 +267,8 @@ function collectFacebookAnswers(rawPayload, lead) {
   for (i = 0; i < fieldData.length; i++) {
     var entry = fieldData[i] || {};
     var name = String(entry.name || "").trim();
-    if (!name || SKIP_FIELD_NAMES.has(name.toLowerCase())) continue;
-    pushFormAnswer(lines, name, entry.values && entry.values[0], seen, valueSeen, lead);
+    if (!name || FACEBOOK_CONTACT_FIELDS.has(name.toLowerCase())) continue;
+    pushFormAnswer(lines, name, entry.values && entry.values[0], seen, valueSeen, null);
   }
 
   return lines;
