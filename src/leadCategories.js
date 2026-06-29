@@ -88,14 +88,30 @@ export function formatCategoryLabel(source, rawPayload) {
 }
 
 export function getLeadReceivedAt(lead) {
-  const payload = lead.raw_payload;
+  const payload =
+    typeof lead.raw_payload === "string"
+      ? (() => {
+          try {
+            return JSON.parse(lead.raw_payload);
+          } catch {
+            return null;
+          }
+        })()
+      : lead.raw_payload;
+
   const entryTime = payload?.entry_time ?? payload?.submitted_at;
   if (entryTime) {
     const parsed = parseAustralianLocalTime(entryTime);
     if (parsed) return parsed;
   }
 
-  return new Date(lead.received_at || lead.created_at);
+  const receivedAt = lead.received_at || lead.created_at;
+  if (receivedAt) {
+    const parsed = parseAustralianLocalTime(receivedAt);
+    if (parsed) return parsed;
+  }
+
+  return new Date(receivedAt);
 }
 
 export function formatTimeSince(date) {

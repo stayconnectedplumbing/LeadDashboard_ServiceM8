@@ -412,6 +412,21 @@ function isDuplicateNameError(message) {
   return String(message).toLowerCase().indexOf("name must be unique") !== -1;
 }
 
+function formatServiceM8Error(message) {
+  var text = String(message || "");
+  text = text
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&");
+  var failedMatch = text.match(/failed\s*\(\d+\)\s*:\s*(.+)$/i);
+  if (failedMatch) text = failedMatch[1].trim();
+  text = text.replace(/\s+/g, " ").trim();
+  if (text.length > 220) text = text.slice(0, 217) + "...";
+  return text || "ServiceM8 request failed";
+}
+
 var SERVICEM8_CATEGORY_UUIDS = {
   same_day_home_services: "56ede18b-65c7-4a1f-a1cc-2420756f929b",
   same_day_shower_repairs: "56ede18b-65c7-4a1f-a1cc-2420756f929b",
@@ -524,8 +539,46 @@ async function findCompanyByName(accessToken, name) {
   return companies[0] && companies[0].uuid ? companies[0].uuid : null;
 }
 
+async function findCompanyByNameScan(accessToken, name) {
+  var target = String(name || "").trim().toLowerCase();
+  if (!target) return null;
+
+  var offset = 0;
+  var pageSize = 100;
+  var maxPages = 5;
+
+  for (var page = 0; page < maxPages; page++) {
+    var query = "$top=" + pageSize + "&$skip=" + offset;
+    var companies = await servicem8Get(accessToken, "company.json", query);
+    if (!companies.length) return null;
+
+    for (var i = 0; i < companies.length; i++) {
+      var companyName = String(companies[i].name || "").trim().toLowerCase();
+      if (companyName === target && companies[i].uuid) {
+        return companies[i].uuid;
+      }
+    }
+
+    if (companies.length < pageSize) return null;
+    offset += pageSize;
+  }
+
+  return null;
+}
+
+async function resolveCompanyUuid(accessToken, name) {
+  try {
+    var filtered = await findCompanyByName(accessToken, name);
+    if (filtered) return filtered;
+  } catch (e) {
+    // OData filters can fail on apostrophes and other special characters.
+  }
+
+  return findCompanyByNameScan(accessToken, name);
+}
+
 async function findOrCreateCompany(accessToken, name) {
-  var existing = await findCompanyByName(accessToken, name);
+  var existing = await resolveCompanyUuid(accessToken, name);
   if (existing) return existing;
 
   try {
@@ -533,7 +586,7 @@ async function findOrCreateCompany(accessToken, name) {
   } catch (error) {
     var message = error instanceof Error ? error.message : String(error);
     if (isDuplicateNameError(message)) {
-      var retry = await findCompanyByName(accessToken, name);
+      var retry = await resolveCompanyUuid(accessToken, name);
       if (retry) return retry;
     }
     throw error;
@@ -629,7 +682,9 @@ exports.handler = async function (event) {
         }),
       };
     } catch (lookupError) {
-      var lookupMessage = lookupError instanceof Error ? lookupError.message : String(lookupError);
+      var lookupMessage = formatServiceM8Error(
+        lookupError instanceof Error ? lookupError.message : String(lookupError),
+      );
       return { eventResponse: JSON.stringify({ error: lookupMessage }) };
     }
   }
@@ -656,7 +711,9 @@ exports.handler = async function (event) {
         }),
       };
     } catch (error) {
-      var message = error instanceof Error ? error.message : String(error);
+      var message = formatServiceM8Error(
+        error instanceof Error ? error.message : String(error),
+      );
       return { eventResponse: JSON.stringify({ error: message }) };
     }
   }

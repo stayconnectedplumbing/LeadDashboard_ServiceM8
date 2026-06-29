@@ -79,6 +79,7 @@ Deno.serve(async (req) => {
     message: payload.message ?? null,
     raw_payload: payload.raw_payload ?? {},
     received_at: payload.received_at ?? new Date().toISOString(),
+    hidden: false,
   };
 
   const { data, error } = await supabase

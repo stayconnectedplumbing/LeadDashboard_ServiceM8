@@ -37,6 +37,7 @@ create table if not exists public.leads (
   servicem8_job_uuid text,
   servicem8_pushed_at timestamptz,
   notes text not null default '',
+  hidden boolean not null default false,
   raw_payload jsonb not null default '{}'::jsonb,
   received_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -52,7 +53,12 @@ create index if not exists leads_source_created_at_idx
 create index if not exists leads_booked_idx
   on public.leads (booked);
 
+create index if not exists leads_hidden_idx
+  on public.leads (hidden)
+  where hidden = false;
+
 -- Migration for existing databases (columns must exist before the index below)
+alter table public.leads add column if not exists hidden boolean not null default false;
 alter table public.leads add column if not exists servicem8_job_uuid text;
 alter table public.leads add column if not exists servicem8_pushed_at timestamptz;
 

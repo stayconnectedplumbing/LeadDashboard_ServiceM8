@@ -52,7 +52,7 @@ export function LeadNotifications({
         }
         aria-expanded={open}
       >
-        <Bell size={15} />
+        <Bell size={14} strokeWidth={2} />
         {unreadCount > 0 && (
           <span className="lead-notifications-badge" aria-hidden="true">
             {unreadCount > 99 ? "99+" : unreadCount}
@@ -87,7 +87,7 @@ export function LeadNotifications({
           ) : (
             <ul className="lead-notifications-list">
               {notifications.map((item) => (
-                <li key={item.id}>
+                <li key={item.id} className="lead-notification-row">
                   <button
                     type="button"
                     className={`lead-notification-item${item.read ? " read" : ""}`}
@@ -96,19 +96,23 @@ export function LeadNotifications({
                       setOpen(false);
                     }}
                   >
-                    <span className="lead-notification-title">
-                      {item.fullName}
-                    </span>
-                    <span className="lead-notification-meta">
-                      {item.categoryLabel}
-                      {item.service ? ` · ${item.service}` : ""}
-                    </span>
-                    {item.phone && (
-                      <span className="lead-notification-phone">{item.phone}</span>
-                    )}
-                    <span className="lead-notification-time">
-                      {formatDate(item.receivedAt)}
-                    </span>
+                    <div className="lead-notification-content">
+                      <span className="lead-notification-title">
+                        {item.fullName}
+                      </span>
+                      <span className="lead-notification-meta">
+                        {item.categoryLabel}
+                        {item.service ? ` · ${item.service}` : ""}
+                      </span>
+                      {item.phone && (
+                        <span className="lead-notification-phone">
+                          {item.phone}
+                        </span>
+                      )}
+                      <span className="lead-notification-time">
+                        {formatDate(item.receivedAt)}
+                      </span>
+                    </div>
                   </button>
                 </li>
               ))}

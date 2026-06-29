@@ -148,6 +148,7 @@ Deno.serve(async (req) => {
 
   const row = normalizeWordPressPayload(payload);
   row.source = resolveWordPressSource(payload);
+  row.hidden = false;
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   const { data, error } = await supabase

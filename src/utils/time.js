@@ -97,6 +97,12 @@ export function todayInSydney() {
   return sydneyDateFormatter.format(new Date());
 }
 
+export function daysAgoInSydney(days) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  return sydneyDateFormatter.format(date);
+}
+
 function formatSydneyDateLabel(dateStr) {
   const [year, month, day] = dateStr.split("-").map(Number);
   return new Intl.DateTimeFormat("en-AU", {

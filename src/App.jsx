@@ -26,6 +26,7 @@ export function App() {
         (payload) => {
           if (!payload.new) return;
           const lead = payload.new;
+          if (lead.hidden) return;
 
           setNotifications((prev) => {
             if (prev.some((item) => item.leadId === lead.id)) {

@@ -116,11 +116,58 @@ async function findCompanyByName(
   return typeof uuid === "string" ? uuid : null;
 }
 
+async function findCompanyByNameScan(
+  accessToken: string,
+  name: string,
+): Promise<string | null> {
+  const target = name.trim().toLowerCase();
+  if (!target) return null;
+
+  const pageSize = 100;
+  const maxPages = 5;
+
+  for (let page = 0; page < maxPages; page++) {
+    const offset = page * pageSize;
+    const companies = await servicem8Get(
+      accessToken,
+      "company.json",
+      `$top=${pageSize}&$skip=${offset}`,
+    );
+    if (!companies.length) return null;
+
+    for (const company of companies) {
+      const companyName = String(company.name ?? "").trim().toLowerCase();
+      const uuid = company.uuid;
+      if (companyName === target && typeof uuid === "string") {
+        return uuid;
+      }
+    }
+
+    if (companies.length < pageSize) return null;
+  }
+
+  return null;
+}
+
+async function resolveCompanyUuid(
+  accessToken: string,
+  name: string,
+): Promise<string | null> {
+  try {
+    const filtered = await findCompanyByName(accessToken, name);
+    if (filtered) return filtered;
+  } catch {
+    // OData filters can fail on apostrophes and other special characters.
+  }
+
+  return findCompanyByNameScan(accessToken, name);
+}
+
 async function findOrCreateCompany(
   accessToken: string,
   name: string,
 ): Promise<string> {
-  const existing = await findCompanyByName(accessToken, name);
+  const existing = await resolveCompanyUuid(accessToken, name);
   if (existing) return existing;
 
   try {
@@ -128,7 +175,7 @@ async function findOrCreateCompany(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (isDuplicateNameError(message)) {
-      const retry = await findCompanyByName(accessToken, name);
+      const retry = await resolveCompanyUuid(accessToken, name);
       if (retry) return retry;
     }
     throw error;

@@ -9,6 +9,7 @@ import {
   RefreshCcw,
   Save,
   Search,
+  Trash2,
   UserRound,
   Filter,
   ChevronDown,
@@ -40,6 +41,7 @@ import {
 } from "../leadCategories";
 import { formatDate } from "../utils/format";
 import { formatLeadFormAnswers } from "../utils/leadFormAnswers";
+import { formatServiceM8Error } from "../utils/servicem8Error";
 import { StatsDateFilters } from "../components/StatsDateFilters";
 import { isInSydneyDateRange, todayInSydney } from "../utils/time";
 
@@ -112,14 +114,29 @@ const DEMO_LEADS = [
 const PAGE_SIZE_OPTIONS = [50, 100, 150, 200];
 
 function normalizeLead(lead) {
+  let rawPayload = lead.raw_payload;
+  if (typeof rawPayload === "string") {
+    try {
+      rawPayload = JSON.parse(rawPayload);
+    } catch {
+      rawPayload = lead.raw_payload;
+    }
+  }
+
   return {
     called: false,
     call_attempted: false,
     servicem8_job_uuid: null,
     servicem8_pushed_at: null,
     notes: "",
+    hidden: false,
     ...lead,
+    raw_payload: rawPayload,
   };
+}
+
+function isLeadHidden(lead) {
+  return Boolean(lead?.hidden);
 }
 
 function isPushedToServiceM8(lead) {
@@ -185,6 +202,7 @@ export function LeadsView({ focusLeadRef }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
+  const [hidingId, setHidingId] = useState(null);
   const [pushingId, setPushingId] = useState(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState(null);
@@ -217,6 +235,7 @@ export function LeadsView({ focusLeadRef }) {
     const { data, error: loadError } = await supabase
       .from("leads")
       .select("*")
+      .eq("hidden", false)
       .order("received_at", { ascending: false });
 
     if (loadError) {
@@ -253,6 +272,8 @@ export function LeadsView({ focusLeadRef }) {
     if (!hasSupabaseConfig) return undefined;
 
     function handleNewLead(lead) {
+      if (isLeadHidden(lead)) return;
+
       const normalized = normalizeLead(lead);
 
       setLeads((prev) => {
@@ -284,6 +305,10 @@ export function LeadsView({ focusLeadRef }) {
         (payload) => {
           if (!payload.new) return;
           const updated = normalizeLead(payload.new);
+          if (isLeadHidden(updated)) {
+            setLeads((prev) => prev.filter((item) => item.id !== updated.id));
+            return;
+          }
           setLeads((prev) =>
             prev.map((item) => (item.id === updated.id ? updated : item)),
           );
@@ -477,6 +502,37 @@ export function LeadsView({ focusLeadRef }) {
     setSavingId(null);
   }
 
+  async function hideLead(lead) {
+    const label = lead.full_name || "this lead";
+    const confirmed = window.confirm(
+      `Hide "${label}" from the dashboard?\n\nThe lead stays in Supabase and can be restored from the database if needed.`,
+    );
+    if (!confirmed) return;
+
+    setHidingId(lead.id);
+    setError("");
+    setExpandedRows((prev) => {
+      const next = { ...prev };
+      delete next[lead.id];
+      return next;
+    });
+    setLeads((prev) => prev.filter((item) => item.id !== lead.id));
+
+    if (hasSupabaseConfig) {
+      const { error: hideError } = await supabase
+        .from("leads")
+        .update({ hidden: true })
+        .eq("id", lead.id);
+
+      if (hideError) {
+        setError(hideError.message);
+        await loadLeads();
+      }
+    }
+
+    setHidingId(null);
+  }
+
   async function persistPushToSupabase(leadId, patch) {
     if (!hasSupabaseConfig) return { ok: true };
 
@@ -594,8 +650,9 @@ export function LeadsView({ focusLeadRef }) {
         jobUrl,
       });
     } catch (pushError) {
-      const message =
-        pushError instanceof Error ? pushError.message : String(pushError);
+      const message = formatServiceM8Error(
+        pushError instanceof Error ? pushError.message : String(pushError),
+      );
       setPushErrors((prev) => ({ ...prev, [lead.id]: message }));
       setToast({
         type: "error",
@@ -955,19 +1012,20 @@ export function LeadsView({ focusLeadRef }) {
                 <th>Push ServiceM8</th>
                 <th></th>
                 <th>Received</th>
+                <th aria-label="Actions"></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="11" className="table-loading">
+                  <td colSpan="12" className="table-loading">
                     <Loader2 className="spin" />
                     Loading leads...
                   </td>
                 </tr>
               ) : filteredLeads.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="table-empty">
+                  <td colSpan="12" className="table-empty">
                     No leads found
                   </td>
                 </tr>
@@ -1103,10 +1161,26 @@ export function LeadsView({ focusLeadRef }) {
                         <td className="date-cell">
                           {formatDate(getLeadReceivedAt(lead))}
                         </td>
+                        <td className="actions-cell">
+                          <button
+                            className="hide-lead-button"
+                            type="button"
+                            title="Hide from dashboard"
+                            aria-label={`Hide ${lead.full_name || "lead"} from dashboard`}
+                            onClick={() => hideLead(lead)}
+                            disabled={hidingId === lead.id}
+                          >
+                            {hidingId === lead.id ? (
+                              <Loader2 className="spin" size={15} />
+                            ) : (
+                              <Trash2 size={15} />
+                            )}
+                          </button>
+                        </td>
                       </tr>
                       {expandedRows[lead.id] && (
                         <tr className="expanded-row">
-                          <td colSpan="11">
+                          <td colSpan="12">
                             <div className="expanded-content">
                               {lead.message && formAnswers.length === 0 && (
                                 <div className="expanded-section">

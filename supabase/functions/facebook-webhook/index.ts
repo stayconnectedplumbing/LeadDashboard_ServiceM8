@@ -303,6 +303,8 @@ Deno.serve(async (req) => {
         }
       }
 
+      row.hidden = false;
+
       const { data, error } = await supabase
         .from("leads")
         .upsert(row, { onConflict: "source,external_id" })
