@@ -35,20 +35,30 @@ function getCallTime(call) {
   return call.call_started_at || call.created_at;
 }
 
+const DEFAULT_STATUS_FILTER = "abandoned";
+const DEFAULT_FOLLOWED_UP_FILTER = "no";
+
+function defaultCallDateFilters() {
+  const today = todayInSydney();
+  return { dateFrom: today, dateTo: today };
+}
+
 export function CallTrackingView() {
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUS_FILTER);
   const [brandFilter, setBrandFilter] = useState("all");
-  const [followedUpFilter, setFollowedUpFilter] = useState("all");
+  const [followedUpFilter, setFollowedUpFilter] = useState(
+    DEFAULT_FOLLOWED_UP_FILTER,
+  );
   const [firstTimeFilter, setFirstTimeFilter] = useState("all");
   const [statsDateFrom, setStatsDateFrom] = useState(() => todayInSydney());
   const [statsDateTo, setStatsDateTo] = useState(() => todayInSydney());
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => todayInSydney());
+  const [dateTo, setDateTo] = useState(() => todayInSydney());
   const [expandedRows, setExpandedRows] = useState({});
   const [localNotes, setLocalNotes] = useState({});
 
@@ -241,12 +251,13 @@ export function CallTrackingView() {
 
   function resetFilters() {
     setSearchQuery("");
-    setStatusFilter("all");
+    setStatusFilter(DEFAULT_STATUS_FILTER);
     setBrandFilter("all");
-    setFollowedUpFilter("all");
+    setFollowedUpFilter(DEFAULT_FOLLOWED_UP_FILTER);
     setFirstTimeFilter("all");
-    setDateFrom("");
-    setDateTo("");
+    const { dateFrom: todayFrom, dateTo: todayTo } = defaultCallDateFilters();
+    setDateFrom(todayFrom);
+    setDateTo(todayTo);
   }
 
   return (

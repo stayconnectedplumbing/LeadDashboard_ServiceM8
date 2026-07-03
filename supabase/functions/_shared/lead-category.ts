@@ -17,7 +17,7 @@ function extractUrl(raw: Record<string, unknown> | undefined): string {
   if (!raw) return "";
 
   const direct = String(
-    raw.current_url ?? raw.page_url ?? raw.referer_url ?? "",
+    raw.current_url ?? raw.page_url ?? raw.referer_url ?? raw._wp_http_referer ?? "",
   ).trim();
   if (direct) return direct.toLowerCase();
 

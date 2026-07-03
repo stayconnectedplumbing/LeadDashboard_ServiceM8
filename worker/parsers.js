@@ -1,7 +1,22 @@
 function matchField(text, label) {
-  const re = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, "i");
-  const m = text.match(re);
-  return m ? m[1].split("\n")[0].replace(/\s*\|.*$/, "").trim() : "";
+  if (!text) return "";
+
+  const inline = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, "i");
+  const inlineMatch = text.match(inline);
+  if (inlineMatch) {
+    return inlineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+
+  const nextLine = new RegExp(
+    `(?:^|\\n)\\s*(?:${label})\\s*:?\\s*\\r?\\n\\s*(.+)`,
+    "i",
+  );
+  const nextLineMatch = text.match(nextLine);
+  if (nextLineMatch) {
+    return nextLineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+
+  return "";
 }
 
 function plainTextFromEmail(email) {
@@ -78,14 +93,24 @@ export function parseSameDayHome(email) {
 }
 
 export function parseSameDayShower(email) {
-  const text = plainTextFromEmail(email);
-  return baseLead(email, "same_day_shower_repairs", {
-    full_name: matchField(text, "Name"),
-    email: matchField(text, "Email"),
-    phone: matchField(text, "Phone|Mobile|Phone Number"),
-    service_requested: matchField(text, "Service|Service Type|Job Description"),
-    message: matchField(text, "Additional Information|Message|Comments|Details"),
-  });
+  const stripped = tableTextFromHtml(email.textHtml || "");
+  const text = [email.textPlain, email.snippet, stripped].filter(Boolean).join("\n");
+  return {
+    ...baseLead(email, "same_day_shower_repairs", {
+      full_name: matchField(text, "Name"),
+      email: matchField(text, "Email"),
+      phone: matchField(text, "Phone|Mobile|Phone Number"),
+      service_requested: matchField(
+        text,
+        "Choose Service|Service|Service Type|Job Description",
+      ),
+      message: matchField(text, "Message|Additional Information|Comments|Details"),
+    }),
+    raw_payload: {
+      ...email.raw_payload,
+      notification_text: text.slice(0, 8000),
+    },
+  };
 }
 
 export function parseEmergencyPlumbing(email) {

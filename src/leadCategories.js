@@ -40,7 +40,11 @@ function extractUrl(rawPayload) {
   if (!rawPayload || typeof rawPayload !== "object") return "";
 
   const direct = String(
-    rawPayload.current_url ?? rawPayload.page_url ?? rawPayload.referer_url ?? "",
+    rawPayload.current_url ??
+      rawPayload.page_url ??
+      rawPayload.referer_url ??
+      rawPayload._wp_http_referer ??
+      "",
   ).trim();
   if (direct) return direct.toLowerCase();
 

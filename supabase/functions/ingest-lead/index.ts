@@ -66,18 +66,40 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  const rawPayload = (payload.raw_payload ?? {}) as Record<string, unknown>;
+
+  function fieldValue(labels: string[]): string {
+    for (const wanted of labels) {
+      const target = wanted.toLowerCase();
+      const direct = rawPayload[wanted];
+      if (direct != null && String(direct).trim()) {
+        return String(direct).trim();
+      }
+      for (const [key, value] of Object.entries(rawPayload)) {
+        if (key.toLowerCase().replace(/_/g, " ") !== target) continue;
+        if (value == null || value === "") continue;
+        if (typeof value === "object") continue;
+        const text = String(value).trim();
+        if (text) return text;
+      }
+    }
+    return "";
+  }
+
   const row = {
     source: resolveLeadCategory(
       payload.source,
-      (payload.raw_payload ?? {}) as Record<string, unknown>,
+      rawPayload,
     ),
     external_id: payload.external_id,
     full_name: payload.full_name ?? null,
     email: payload.email ?? null,
     phone: payload.phone ?? null,
-    service_requested: payload.service_requested ?? null,
-    message: payload.message ?? null,
-    raw_payload: payload.raw_payload ?? {},
+    service_requested: payload.service_requested ??
+      fieldValue(["Choose Service", "choose_service", "Service", "service"]) ||
+      null,
+    message: payload.message ?? fieldValue(["Message", "message"]) || null,
+    raw_payload: rawPayload,
     received_at: payload.received_at ?? new Date().toISOString(),
     hidden: false,
   };

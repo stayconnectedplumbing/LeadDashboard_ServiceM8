@@ -21,8 +21,10 @@ var SKIP_PAYLOAD_KEYS = new Set([
   "adgroup_id", "created_time", "id", "meta_test", "graph_fetch_error",
   "current_url", "page_url", "referer_url", "form_title", "entry_time",
   "form_type", "render_id", "_wp_http_referer", "_forminator_user_ip",
-  "webhook_secret", "_webhook_secret",
+  "webhook_secret", "_webhook_secret", "notification_text",
 ]);
+
+var SHOWER_REPAIRS_HOST = "samedayshowerrepairs.com.au";
 
 function decodeHtmlEntities(text) {
   return String(text)
@@ -165,6 +167,127 @@ function valueMatchesLead(value, lead, skipMessageMatch) {
   }
 
   return false;
+}
+
+function matchNotificationField(text, label) {
+  if (!text) return "";
+  var inline = new RegExp("(?:^|\\n)\\s*(?:" + label + ")\\s*[:\\-|]\\s*(.+)", "i");
+  var inlineMatch = text.match(inline);
+  if (inlineMatch) {
+    return inlineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+  var nextLine = new RegExp("(?:^|\\n)\\s*(?:" + label + ")\\s*:?\\s*\\r?\\n\\s*(.+)", "i");
+  var nextLineMatch = text.match(nextLine);
+  if (nextLineMatch) {
+    return nextLineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+  return "";
+}
+
+function firstForminatorFieldValue(rawPayload, prefixes) {
+  var p;
+  var i;
+  var key;
+  var value;
+  var text;
+  for (p = 0; p < prefixes.length; p++) {
+    var keys = sortedForminatorKeys(rawPayload, prefixes[p]);
+    for (i = 0; i < keys.length; i++) {
+      key = keys[i];
+      value = rawPayload[key];
+      if (value == null || value === "") continue;
+      text = Array.isArray(value) ? value.join(", ") : String(value).trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function showerEmailText(rawPayload) {
+  return [rawPayload.notification_text, rawPayload.snippet, rawPayload.text_plain]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function isShowerRepairsLead(lead, rawPayload) {
+  rawPayload = rawPayload || {};
+  if (lead && lead.source === "same_day_shower_repairs") return true;
+  if (resolveLeadCategory(lead && lead.source, rawPayload) === "same_day_shower_repairs") {
+    return true;
+  }
+  var formTitle = String(rawPayload.form_title || "").toLowerCase();
+  if (formTitle.indexOf("shower") !== -1) return true;
+  var subject = String(rawPayload.subject || "").toLowerCase();
+  return subject.indexOf("shower quote") !== -1;
+}
+
+function payloadFieldValue(rawPayload, labels) {
+  var wanted;
+  var target;
+  var direct;
+  var key;
+  var value;
+  var text;
+  for (var i = 0; i < labels.length; i++) {
+    wanted = labels[i];
+    target = wanted.toLowerCase();
+    direct = rawPayload[wanted];
+    if (direct != null && String(direct).trim()) {
+      return String(direct).trim();
+    }
+    for (key in rawPayload) {
+      if (!Object.prototype.hasOwnProperty.call(rawPayload, key)) continue;
+      if (key.toLowerCase().replace(/_/g, " ") !== target) continue;
+      value = rawPayload[key];
+      if (value == null || value === "") continue;
+      if (typeof value === "object") continue;
+      text = String(value).trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function appendShowerEmailAnswers(answers, rawPayload, lead) {
+  if (!isShowerRepairsLead(lead, rawPayload)) return answers;
+
+  var text = showerEmailText(rawPayload);
+  var chooseService =
+    payloadFieldValue(rawPayload, ["Choose Service", "choose_service", "Service", "service"]) ||
+    matchNotificationField(text, "Choose Service") ||
+    firstForminatorFieldValue(rawPayload, ["select", "radio"]) ||
+    matchNotificationField(text, "Service|Service Type|Job Description") ||
+    (lead && lead.service_requested) ||
+    "";
+  var message =
+    payloadFieldValue(rawPayload, ["Message", "message"]) ||
+    matchNotificationField(text, "Message|Additional Information|Comments|Details") ||
+    firstForminatorFieldValue(rawPayload, ["textarea"]) ||
+    (lead && lead.message) ||
+    "";
+  var hasLabel = function (label) {
+    var lower = label.toLowerCase();
+    for (var i = 0; i < answers.length; i++) {
+      if (answers[i].label.toLowerCase() === lower) return true;
+    }
+    return false;
+  };
+  var extra = [];
+
+  if (chooseService && !hasLabel("Choose Service")) {
+    extra.push({
+      label: humanizeLabel("Choose Service"),
+      value: formatDisplayText(chooseService),
+    });
+  }
+  if (message && !hasLabel("Message")) {
+    extra.push({
+      label: humanizeLabel("Message"),
+      value: formatDisplayText(message),
+    });
+  }
+
+  return extra.length ? answers.concat(extra) : answers;
 }
 
 function pushFormAnswer(lines, label, value, seen, valueSeen, lead, options) {
@@ -315,15 +438,17 @@ function formatLeadFormAnswers(rawPayload, lead) {
   rawPayload = rawPayload || {};
   if (typeof rawPayload !== "object") return [];
 
+  var answers = [];
+
   if (isForminatorPayload(rawPayload)) {
-    return collectForminatorAnswers(rawPayload, lead);
+    answers = collectForminatorAnswers(rawPayload, lead);
+  } else if (Array.isArray(rawPayload.field_data) && rawPayload.field_data.length > 0) {
+    answers = collectFacebookAnswers(rawPayload, lead);
+  } else {
+    answers = collectGenericAnswers(rawPayload, lead);
   }
 
-  if (Array.isArray(rawPayload.field_data) && rawPayload.field_data.length > 0) {
-    return collectFacebookAnswers(rawPayload, lead);
-  }
-
-  return collectGenericAnswers(rawPayload, lead);
+  return appendShowerEmailAnswers(answers, rawPayload, lead);
 }
 
 function extractAddressFromPayload(rawPayload) {
@@ -446,7 +571,8 @@ function resolveLeadCategory(source, rawPayload) {
   if (source === "facebook") return "facebook";
 
   var url = String(
-    rawPayload.current_url || rawPayload.page_url || rawPayload.referer_url || "",
+    rawPayload.current_url || rawPayload.page_url || rawPayload.referer_url ||
+      rawPayload._wp_http_referer || "",
   ).trim().toLowerCase();
   if (!url) {
     var key;

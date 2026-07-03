@@ -201,30 +201,34 @@ export function normalizeWordPressPayload(payload: Payload) {
       "your-phone",
     ]));
 
-  const serviceRequested = (forminator
-    ? forminatorField(payload, ["select", "radio"]) ||
-      forminatorFieldByLabel(payload, ["service"]) ||
-      field(payload, ["service type", "service_type"])
-    : field(payload, [
-      "service",
-      "service_requested",
-      "service type",
-      "subject",
-      "requested service",
-      "job description",
-    ]));
+  const serviceRequested =
+    (forminator
+      ? forminatorField(payload, ["select", "radio"]) ||
+        forminatorFieldByLabel(payload, ["service", "choose"]) ||
+        field(payload, ["service type", "service_type"])
+      : field(payload, [
+        "choose service",
+        "choose_service",
+        "service",
+        "service_requested",
+        "service type",
+        "subject",
+        "requested service",
+        "job description",
+      ])) || field(payload, ["choose service", "choose_service", "service"]);
 
-  const message = forminator
-    ? forminatorMessage(payload)
-    : field(payload, [
-      "message",
-      "comments",
-      "details",
-      "your-message",
-      "additional information",
-      "enquiry",
-      "project summary",
-    ]);
+  const message =
+    (forminator
+      ? forminatorMessage(payload)
+      : field(payload, [
+        "message",
+        "comments",
+        "details",
+        "your-message",
+        "additional information",
+        "enquiry",
+        "project summary",
+      ])) || field(payload, ["message"]);
 
   const receivedAtRaw = forminator
     ? payload.entry_time ?? payload.submitted_at

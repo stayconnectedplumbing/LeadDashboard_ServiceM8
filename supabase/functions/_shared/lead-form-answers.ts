@@ -1,6 +1,9 @@
+import { resolveLeadCategory } from "./lead-category.ts";
+
 export type FormAnswer = { label: string; value: string };
 
 export type LeadFormContext = {
+  source?: string | null;
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -60,6 +63,7 @@ const SKIP_PAYLOAD_KEYS = new Set([
   "_forminator_user_ip",
   "webhook_secret",
   "_webhook_secret",
+  "notification_text",
 ]);
 
 const FORMINATOR_FIELD_KEY =
@@ -214,6 +218,136 @@ function valueMatchesLead(
   return false;
 }
 
+function isShowerRepairsLead(
+  lead: LeadFormContext | null,
+  rawPayload: Record<string, unknown> = {},
+): boolean {
+  if (lead?.source === "same_day_shower_repairs") return true;
+  if (resolveLeadCategory(lead?.source ?? "", rawPayload) === "same_day_shower_repairs") {
+    return true;
+  }
+
+  const formTitle = String(rawPayload.form_title ?? "").toLowerCase();
+  if (formTitle.includes("shower")) return true;
+
+  const subject = String(rawPayload.subject ?? "").toLowerCase();
+  return subject.includes("shower quote");
+}
+
+function matchNotificationField(text: string, label: string): string {
+  if (!text) return "";
+
+  const inline = new RegExp(`(?:^|\\n)\\s*(?:${label})\\s*[:\\-|]\\s*(.+)`, "i");
+  const inlineMatch = text.match(inline);
+  if (inlineMatch) {
+    return inlineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+
+  const nextLine = new RegExp(
+    `(?:^|\\n)\\s*(?:${label})\\s*:?\\s*\\r?\\n\\s*(.+)`,
+    "i",
+  );
+  const nextLineMatch = text.match(nextLine);
+  if (nextLineMatch) {
+    return nextLineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+
+  return "";
+}
+
+function firstForminatorFieldValue(
+  rawPayload: Record<string, unknown>,
+  prefixes: string[],
+): string {
+  for (const prefix of prefixes) {
+    for (const key of sortedForminatorKeys(rawPayload, prefix)) {
+      const value = rawPayload[key];
+      if (value == null || value === "") continue;
+      const text = Array.isArray(value) ? value.join(", ") : String(value).trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function showerEmailText(rawPayload: Record<string, unknown>): string {
+  return [rawPayload.notification_text, rawPayload.snippet, rawPayload.text_plain]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function payloadFieldValue(
+  rawPayload: Record<string, unknown>,
+  labels: string[],
+): string {
+  for (const wanted of labels) {
+    const target = wanted.toLowerCase();
+    const direct = rawPayload[wanted];
+    if (direct != null && String(direct).trim()) {
+      return String(direct).trim();
+    }
+    for (const [key, value] of Object.entries(rawPayload)) {
+      if (key.toLowerCase().replace(/_/g, " ") !== target) continue;
+      if (value == null || value === "") continue;
+      if (typeof value === "object") continue;
+      const text = String(value).trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function appendShowerEmailAnswers(
+  answers: FormAnswer[],
+  rawPayload: Record<string, unknown>,
+  lead: LeadFormContext | null,
+): FormAnswer[] {
+  if (!isShowerRepairsLead(lead, rawPayload)) return answers;
+
+  const text = showerEmailText(rawPayload);
+  const chooseService =
+    payloadFieldValue(rawPayload, [
+      "Choose Service",
+      "choose_service",
+      "Service",
+      "service",
+    ]) ||
+    matchNotificationField(text, "Choose Service") ||
+    firstForminatorFieldValue(rawPayload, ["select", "radio"]) ||
+    matchNotificationField(text, "Service|Service Type|Job Description") ||
+    lead?.service_requested ||
+    "";
+  const message =
+    payloadFieldValue(rawPayload, ["Message", "message"]) ||
+    matchNotificationField(
+      text,
+      "Message|Additional Information|Comments|Details",
+    ) ||
+    firstForminatorFieldValue(rawPayload, ["textarea"]) ||
+    lead?.message ||
+    "";
+
+  const hasLabel = (label: string) =>
+    answers.some((item) => item.label.toLowerCase() === label.toLowerCase());
+
+  const extra: FormAnswer[] = [];
+
+  if (chooseService && !hasLabel("Choose Service")) {
+    extra.push({
+      label: humanizeLabel("Choose Service"),
+      value: formatDisplayText(chooseService),
+    });
+  }
+  if (message && !hasLabel("Message")) {
+    extra.push({
+      label: humanizeLabel("Message"),
+      value: formatDisplayText(message),
+    });
+  }
+
+  return extra.length ? [...answers, ...extra] : answers;
+}
+
 function pushAnswer(
   lines: FormAnswer[],
   label: string,
@@ -362,15 +496,20 @@ export function formatLeadFormAnswers(
 ): FormAnswer[] {
   if (!rawPayload || typeof rawPayload !== "object") return [];
 
+  let answers: FormAnswer[] = [];
+
   if (isForminatorPayload(rawPayload)) {
-    return collectForminatorAnswers(rawPayload, lead);
+    answers = collectForminatorAnswers(rawPayload, lead);
+  } else if (
+    Array.isArray(rawPayload.field_data) &&
+    rawPayload.field_data.length > 0
+  ) {
+    answers = collectFacebookAnswers(rawPayload, lead);
+  } else {
+    answers = collectGenericAnswers(rawPayload, lead);
   }
 
-  if (Array.isArray(rawPayload.field_data) && rawPayload.field_data.length > 0) {
-    return collectFacebookAnswers(rawPayload, lead);
-  }
-
-  return collectGenericAnswers(rawPayload, lead);
+  return appendShowerEmailAnswers(answers, rawPayload, lead);
 }
 
 export function extractServiceRequiredForJob(
