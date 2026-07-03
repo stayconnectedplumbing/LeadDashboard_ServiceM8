@@ -689,6 +689,11 @@ export function LeadsView({ focusLeadRef }) {
     setDateTo(today);
   }
 
+  function handleExportCSV() {
+    if (filteredLeads.length === 0) return;
+    downloadCSV(filteredLeads);
+  }
+
   return (
     <div className="page-shell">
       <header className="page-top">
@@ -739,16 +744,6 @@ export function LeadsView({ focusLeadRef }) {
           </section>
 
           <div className="topbar-actions">
-            {filteredLeads.length > 0 && (
-              <button
-                className="text-button"
-                onClick={() => downloadCSV(filteredLeads)}
-                type="button"
-              >
-                <Download size={18} />
-                Export CSV
-              </button>
-            )}
             <button
               className="icon-button"
               onClick={loadLeads}
@@ -785,9 +780,25 @@ export function LeadsView({ focusLeadRef }) {
             <Filter size={20} />
             <h2>Filters</h2>
           </div>
-          <button className="text-button" onClick={resetFilters} type="button">
-            Reset All
-          </button>
+          <div className="filters-header-actions">
+            <button
+              className="text-button"
+              onClick={handleExportCSV}
+              type="button"
+              disabled={loading || filteredLeads.length === 0}
+              title={
+                filteredLeads.length === 0
+                  ? "No leads to export with current filters"
+                  : `Export ${filteredLeads.length} lead(s) to CSV`
+              }
+            >
+              <Download size={18} />
+              Export CSV
+            </button>
+            <button className="text-button" onClick={resetFilters} type="button">
+              Reset All
+            </button>
+          </div>
         </div>
 
         <div className="filters-grid">

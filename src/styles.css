@@ -520,6 +520,17 @@ body {
   margin-bottom: 1.25rem;
 }
 
+.filters-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.text-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .filters-title {
   display: flex;
   align-items: center;

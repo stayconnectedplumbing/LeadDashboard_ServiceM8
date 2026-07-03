@@ -5,7 +5,16 @@ export const CALL_STATUS_OPTIONS = [
   { id: "answered", label: "Answered" },
   { id: "missed", label: "Missed" },
   { id: "abandoned", label: "Abandoned" },
+  { id: "missed_abandoned", label: "Missed & Abandoned" },
 ];
+
+export function matchesCallStatusFilter(callStatus, filterId) {
+  if (filterId === "all") return true;
+  if (filterId === "missed_abandoned") {
+    return callStatus === "missed" || callStatus === "abandoned";
+  }
+  return callStatus === filterId;
+}
 
 export const BRAND_FILTER_OPTIONS = [
   { id: "all", label: "All brands" },

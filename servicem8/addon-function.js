@@ -451,43 +451,88 @@ function formatLeadFormAnswers(rawPayload, lead) {
   return appendShowerEmailAnswers(answers, rawPayload, lead);
 }
 
+function isStreetPayloadField(field) {
+  var normalized = field.toLowerCase().replace(/_/g, " ");
+  if (normalized.indexOf("email") !== -1 || normalized.indexOf("page url") !== -1) return false;
+  if (normalized === "address" || normalized === "job address") return true;
+  if (normalized.indexOf("address") !== -1) return true;
+  return /^address[-_]?\d+$/i.test(field);
+}
+
+function isSuburbPayloadField(field) {
+  var normalized = field.toLowerCase().replace(/_/g, " ");
+  return normalized === "suburb" || normalized === "city" || normalized.indexOf("suburb") !== -1;
+}
+
+function isPostcodePayloadField(field) {
+  var normalized = field.toLowerCase().replace(/_/g, " ");
+  return (
+    normalized === "postcode" ||
+    normalized === "post code" ||
+    normalized === "post_code" ||
+    normalized.indexOf("postcode") !== -1
+  );
+}
+
+function joinJobAddress(street, suburb, postcode) {
+  var streetText = String(street || "").trim();
+  var suburbText = String(suburb || "").trim();
+  var postcodeText = String(postcode || "").trim();
+  var parts = [];
+
+  if (streetText) parts.push(streetText);
+
+  var locality = [suburbText, postcodeText].filter(Boolean).join(" ");
+  if (!locality) return parts.join(", ");
+
+  if (!streetText) {
+    parts.push(locality);
+    return parts.join(", ");
+  }
+
+  var streetLower = streetText.toLowerCase();
+  var suburbIncluded = !suburbText || streetLower.indexOf(suburbText.toLowerCase()) !== -1;
+  var postcodeIncluded =
+    !postcodeText || streetLower.indexOf(postcodeText.toLowerCase()) !== -1;
+
+  if (!(suburbIncluded && postcodeIncluded)) {
+    parts.push(locality);
+  }
+
+  return parts.join(", ");
+}
+
 function extractAddressFromPayload(rawPayload) {
   rawPayload = rawPayload || {};
+  var street = "";
   var suburb = fieldDataValue(rawPayload, ["suburb", "city"]);
   var postcode = fieldDataValue(rawPayload, ["postcode", "post_code"]);
-  var address = "";
+  var field;
+  var value;
+  var text;
 
-  if (!suburb || !postcode) {
-    for (var field in rawPayload) {
-      if (!Object.prototype.hasOwnProperty.call(rawPayload, field)) continue;
-      var value = rawPayload[field];
-      if (value == null || value === "") continue;
-      var text = String(value).trim();
-      if (!text) continue;
-      var normalized = field.toLowerCase();
+  for (field in rawPayload) {
+    if (!Object.prototype.hasOwnProperty.call(rawPayload, field)) continue;
+    value = rawPayload[field];
+    if (value == null || value === "") continue;
+    if (typeof value === "object") continue;
+    text = String(value).trim();
+    if (!text) continue;
 
-      if (!suburb && (normalized.indexOf("suburb") !== -1 || normalized.indexOf("city") !== -1)) {
-        suburb = text;
-      } else if (
-        !postcode &&
-        (normalized.indexOf("postcode") !== -1 || normalized.indexOf("post_code") !== -1)
-      ) {
-        postcode = text;
-      } else if (!address && normalized.indexOf("address") !== -1) {
-        address = text;
-      } else if (!suburb && /^text[-_]?\d+$/i.test(field)) {
-        suburb = text;
-      } else if (!postcode && /^number[-_]?\d+$/i.test(field) && /^\d{4}$/.test(text)) {
-        postcode = text;
-      }
+    if (!street && isStreetPayloadField(field)) {
+      street = text;
+    } else if (!suburb && isSuburbPayloadField(field)) {
+      suburb = text;
+    } else if (!postcode && isPostcodePayloadField(field)) {
+      postcode = text;
+    } else if (!suburb && /^text[-_]?\d+$/i.test(field)) {
+      suburb = text;
+    } else if (!postcode && /^number[-_]?\d+$/i.test(field) && /^\d{4}$/.test(text)) {
+      postcode = text;
     }
   }
 
-  if (suburb && postcode) return suburb + " " + postcode;
-  if (suburb) return suburb;
-  if (postcode) return postcode;
-  if (address) return address;
-  return "";
+  return joinJobAddress(street, suburb, postcode);
 }
 
 function extractAddress(lead) {

@@ -24,6 +24,7 @@ import {
   DEMO_PHONE_CALLS,
   downloadCallsCSV,
   formatCallStatus,
+  matchesCallStatusFilter,
   normalizePhoneCall,
   statusBadgeClass,
 } from "../callTracking";
@@ -35,7 +36,7 @@ function getCallTime(call) {
   return call.call_started_at || call.created_at;
 }
 
-const DEFAULT_STATUS_FILTER = "abandoned";
+const DEFAULT_STATUS_FILTER = "missed_abandoned";
 const DEFAULT_FOLLOWED_UP_FILTER = "no";
 
 function defaultCallDateFilters() {
@@ -134,8 +135,7 @@ export function CallTrackingView() {
             value.toLowerCase().includes(searchQuery.trim().toLowerCase()),
           );
 
-      const matchesStatus =
-        statusFilter === "all" || call.call_status === statusFilter;
+      const matchesStatus = matchesCallStatusFilter(call.call_status, statusFilter);
       const matchesBrand =
         brandFilter === "all" || call.brand === brandFilter;
       const matchesFollowedUp =
@@ -260,6 +260,16 @@ export function CallTrackingView() {
     setDateTo(todayTo);
   }
 
+  function handleExportCSV() {
+    if (filteredCalls.length === 0) return;
+    downloadCallsCSV(
+      filteredCalls,
+      formatDate,
+      formatDuration,
+      formatCallStatus,
+    );
+  }
+
   return (
     <div className="page-shell">
       <header className="page-top">
@@ -328,23 +338,6 @@ export function CallTrackingView() {
           </section>
 
           <div className="topbar-actions">
-            {filteredCalls.length > 0 && (
-              <button
-                className="text-button"
-                onClick={() =>
-                  downloadCallsCSV(
-                    filteredCalls,
-                    formatDate,
-                    formatDuration,
-                    formatCallStatus,
-                  )
-                }
-                type="button"
-              >
-                <Download size={18} />
-                Export CSV
-              </button>
-            )}
             <button
               className="icon-button"
               onClick={loadCalls}
@@ -363,9 +356,25 @@ export function CallTrackingView() {
             <Filter size={20} />
             <h2>Filters</h2>
           </div>
-          <button className="text-button" onClick={resetFilters} type="button">
-            Reset All
-          </button>
+          <div className="filters-header-actions">
+            <button
+              className="text-button"
+              onClick={handleExportCSV}
+              type="button"
+              disabled={loading || filteredCalls.length === 0}
+              title={
+                filteredCalls.length === 0
+                  ? "No calls to export with current filters"
+                  : `Export ${filteredCalls.length} call(s) to CSV`
+              }
+            >
+              <Download size={18} />
+              Export CSV
+            </button>
+            <button className="text-button" onClick={resetFilters} type="button">
+              Reset All
+            </button>
+          </div>
         </div>
 
         <div className="filters-grid">
