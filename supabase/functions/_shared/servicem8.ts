@@ -1,6 +1,8 @@
 import { resolveServiceM8CategoryUuid } from "./servicem8-categories.ts";
 import {
+  clampServiceM8Address,
   extractAddressFromPayload,
+  extractMessageForJob,
   extractServiceRequiredForJob,
 } from "./lead-form-answers.ts";
 
@@ -41,9 +43,13 @@ function extractAddress(lead: LeadRecord): string {
 }
 
 function buildJobDescription(lead: LeadRecord): string {
-  const service = extractServiceRequiredForJob(lead.raw_payload ?? {}, lead);
-  if (!service) return "New lead from dashboard";
-  return `Service Required: ${service}`;
+  const rawPayload = lead.raw_payload ?? {};
+  const service = extractServiceRequiredForJob(rawPayload, lead);
+  const message = extractMessageForJob(rawPayload, lead);
+  const lines: string[] = [];
+  if (service) lines.push(`Service Required: ${service}`);
+  if (message) lines.push(`Message: ${message}`);
+  return lines.join("\n") || "New lead from dashboard";
 }
 
 function isDuplicateNameError(message: string): boolean {
@@ -213,7 +219,7 @@ export async function createServiceM8JobFromLead(
 
   const { first, last } = splitName(lead.full_name);
   const jobDescription = buildJobDescription(lead);
-  const jobAddress = extractAddress(lead);
+  const jobAddress = clampServiceM8Address(extractAddress(lead));
   const companyName = lead.full_name?.trim() || "Unknown Lead";
 
   const companyUuid = await findOrCreateCompany(accessToken, companyName);

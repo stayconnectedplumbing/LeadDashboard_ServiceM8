@@ -21,8 +21,10 @@ var SKIP_PAYLOAD_KEYS = new Set([
   "adgroup_id", "created_time", "id", "meta_test", "graph_fetch_error",
   "current_url", "page_url", "referer_url", "form_title", "entry_time",
   "form_type", "render_id", "_wp_http_referer", "_forminator_user_ip",
-  "webhook_secret", "_webhook_secret",
+  "webhook_secret", "_webhook_secret", "notification_text",
 ]);
+
+var SHOWER_REPAIRS_HOST = "samedayshowerrepairs.com.au";
 
 function decodeHtmlEntities(text) {
   return String(text)
@@ -59,8 +61,12 @@ function humanizeLabel(name) {
 var SKIP_FIELD_NAMES = new Set([
   "full_name", "name", "first_name", "last_name", "email",
   "phone_number", "phone", "mobile", "service", "service_requested",
-  "service_required", "post_code", "postcode",
   "message", "comments", "details",
+]);
+
+var FACEBOOK_CONTACT_FIELDS = new Set([
+  "full_name", "name", "first_name", "last_name", "email",
+  "phone_number", "phone", "mobile",
 ]);
 
 var FORMINATOR_FIELD_KEY =
@@ -85,7 +91,11 @@ function isTrackingToken(value) {
 }
 
 function isNumericId(value) {
-  return /^\d{4,}$/.test(String(value).trim());
+  return /^\d{5,}$/.test(String(value).trim());
+}
+
+function isPostcodeField(label) {
+  return /^(post_code|postcode|zip|postal_code)$/i.test(String(label).trim());
 }
 
 function isHumanReadableAnswer(value, allowLongText) {
@@ -159,12 +169,134 @@ function valueMatchesLead(value, lead, skipMessageMatch) {
   return false;
 }
 
+function matchNotificationField(text, label) {
+  if (!text) return "";
+  var inline = new RegExp("(?:^|\\n)\\s*(?:" + label + ")\\s*[:\\-|]\\s*(.+)", "i");
+  var inlineMatch = text.match(inline);
+  if (inlineMatch) {
+    return inlineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+  var nextLine = new RegExp("(?:^|\\n)\\s*(?:" + label + ")\\s*:?\\s*\\r?\\n\\s*(.+)", "i");
+  var nextLineMatch = text.match(nextLine);
+  if (nextLineMatch) {
+    return nextLineMatch[1].split("\n")[0].replace(/\s*\|.*$/, "").trim();
+  }
+  return "";
+}
+
+function firstForminatorFieldValue(rawPayload, prefixes) {
+  var p;
+  var i;
+  var key;
+  var value;
+  var text;
+  for (p = 0; p < prefixes.length; p++) {
+    var keys = sortedForminatorKeys(rawPayload, prefixes[p]);
+    for (i = 0; i < keys.length; i++) {
+      key = keys[i];
+      value = rawPayload[key];
+      if (value == null || value === "") continue;
+      text = Array.isArray(value) ? value.join(", ") : String(value).trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function showerEmailText(rawPayload) {
+  return [rawPayload.notification_text, rawPayload.snippet, rawPayload.text_plain]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function isShowerRepairsLead(lead, rawPayload) {
+  rawPayload = rawPayload || {};
+  if (lead && lead.source === "same_day_shower_repairs") return true;
+  if (resolveLeadCategory(lead && lead.source, rawPayload) === "same_day_shower_repairs") {
+    return true;
+  }
+  var formTitle = String(rawPayload.form_title || "").toLowerCase();
+  if (formTitle.indexOf("shower") !== -1) return true;
+  var subject = String(rawPayload.subject || "").toLowerCase();
+  return subject.indexOf("shower quote") !== -1;
+}
+
+function payloadFieldValue(rawPayload, labels) {
+  var wanted;
+  var target;
+  var direct;
+  var key;
+  var value;
+  var text;
+  for (var i = 0; i < labels.length; i++) {
+    wanted = labels[i];
+    target = wanted.toLowerCase();
+    direct = rawPayload[wanted];
+    if (direct != null && String(direct).trim()) {
+      return String(direct).trim();
+    }
+    for (key in rawPayload) {
+      if (!Object.prototype.hasOwnProperty.call(rawPayload, key)) continue;
+      if (key.toLowerCase().replace(/_/g, " ") !== target) continue;
+      value = rawPayload[key];
+      if (value == null || value === "") continue;
+      if (typeof value === "object") continue;
+      text = String(value).trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function appendShowerEmailAnswers(answers, rawPayload, lead) {
+  if (!isShowerRepairsLead(lead, rawPayload)) return answers;
+
+  var text = showerEmailText(rawPayload);
+  var chooseService =
+    payloadFieldValue(rawPayload, ["Choose Service", "choose_service", "Service", "service"]) ||
+    matchNotificationField(text, "Choose Service") ||
+    firstForminatorFieldValue(rawPayload, ["select", "radio"]) ||
+    matchNotificationField(text, "Service|Service Type|Job Description") ||
+    (lead && lead.service_requested) ||
+    "";
+  var message =
+    payloadFieldValue(rawPayload, ["Message", "message"]) ||
+    matchNotificationField(text, "Message|Additional Information|Comments|Details") ||
+    firstForminatorFieldValue(rawPayload, ["textarea"]) ||
+    (lead && lead.message) ||
+    "";
+  var hasLabel = function (label) {
+    var lower = label.toLowerCase();
+    for (var i = 0; i < answers.length; i++) {
+      if (answers[i].label.toLowerCase() === lower) return true;
+    }
+    return false;
+  };
+  var extra = [];
+
+  if (chooseService && !hasLabel("Choose Service")) {
+    extra.push({
+      label: humanizeLabel("Choose Service"),
+      value: formatDisplayText(chooseService),
+    });
+  }
+  if (message && !hasLabel("Message")) {
+    extra.push({
+      label: humanizeLabel("Message"),
+      value: formatDisplayText(message),
+    });
+  }
+
+  return extra.length ? answers.concat(extra) : answers;
+}
+
 function pushFormAnswer(lines, label, value, seen, valueSeen, lead, options) {
   options = options || {};
   var text = value == null ? "" : String(value).trim();
   if (!label || !text) return;
-  if (!isHumanReadableAnswer(text, options.allowLongText)) return;
-  if (valueMatchesLead(text, lead, options.skipMessageMatch)) return;
+  var isPostcode = isPostcodeField(label) && /^\d{4}$/.test(text);
+  if (!isHumanReadableAnswer(text, options.allowLongText) && !isPostcode) return;
+  if (lead && valueMatchesLead(text, lead, options.skipMessageMatch)) return;
 
   var valueKey = text.toLowerCase();
   if (valueSeen.has(valueKey)) return;
@@ -173,7 +305,10 @@ function pushFormAnswer(lines, label, value, seen, valueSeen, lead, options) {
   if (seen.has(key)) return;
   seen.add(key);
   valueSeen.add(valueKey);
-  lines.push({ label: humanizeLabel(label), value: formatDisplayText(text) });
+  lines.push({
+    label: humanizeLabel(label),
+    value: isPostcode ? text : formatDisplayText(text),
+  });
 }
 
 function collectForminatorAnswers(rawPayload, lead) {
@@ -255,8 +390,8 @@ function collectFacebookAnswers(rawPayload, lead) {
   for (i = 0; i < fieldData.length; i++) {
     var entry = fieldData[i] || {};
     var name = String(entry.name || "").trim();
-    if (!name || SKIP_FIELD_NAMES.has(name.toLowerCase())) continue;
-    pushFormAnswer(lines, name, entry.values && entry.values[0], seen, valueSeen, lead);
+    if (!name || FACEBOOK_CONTACT_FIELDS.has(name.toLowerCase())) continue;
+    pushFormAnswer(lines, name, entry.values && entry.values[0], seen, valueSeen, null);
   }
 
   return lines;
@@ -303,82 +438,179 @@ function formatLeadFormAnswers(rawPayload, lead) {
   rawPayload = rawPayload || {};
   if (typeof rawPayload !== "object") return [];
 
+  var answers = [];
+
   if (isForminatorPayload(rawPayload)) {
-    return collectForminatorAnswers(rawPayload, lead);
+    answers = collectForminatorAnswers(rawPayload, lead);
+  } else if (Array.isArray(rawPayload.field_data) && rawPayload.field_data.length > 0) {
+    answers = collectFacebookAnswers(rawPayload, lead);
+  } else {
+    answers = collectGenericAnswers(rawPayload, lead);
   }
 
-  if (Array.isArray(rawPayload.field_data) && rawPayload.field_data.length > 0) {
-    return collectFacebookAnswers(rawPayload, lead);
+  return appendShowerEmailAnswers(answers, rawPayload, lead);
+}
+
+function isStreetPayloadField(field) {
+  var normalized = field.toLowerCase().replace(/_/g, " ");
+  if (normalized.indexOf("email") !== -1 || normalized.indexOf("page url") !== -1) return false;
+  if (normalized === "address" || normalized === "job address") return true;
+  if (normalized.indexOf("address") !== -1) return true;
+  return /^address[-_]?\d+$/i.test(field);
+}
+
+function isSuburbPayloadField(field) {
+  var normalized = field.toLowerCase().replace(/_/g, " ");
+  return normalized === "suburb" || normalized === "city" || normalized.indexOf("suburb") !== -1;
+}
+
+function isPostcodePayloadField(field) {
+  var normalized = field.toLowerCase().replace(/_/g, " ");
+  return (
+    normalized === "postcode" ||
+    normalized === "post code" ||
+    normalized === "post_code" ||
+    normalized.indexOf("postcode") !== -1
+  );
+}
+
+function joinJobAddress(street, suburb, postcode) {
+  var streetText = String(street || "").trim();
+  var suburbText = String(suburb || "").trim();
+  var postcodeText = String(postcode || "").trim();
+  var parts = [];
+
+  if (streetText) parts.push(streetText);
+
+  var locality = [suburbText, postcodeText].filter(Boolean).join(" ");
+  if (!locality) return parts.join(", ");
+
+  if (!streetText) {
+    parts.push(locality);
+    return parts.join(", ");
   }
 
-  return collectGenericAnswers(rawPayload, lead);
+  var streetLower = streetText.toLowerCase();
+  var suburbIncluded = !suburbText || streetLower.indexOf(suburbText.toLowerCase()) !== -1;
+  var postcodeIncluded =
+    !postcodeText || streetLower.indexOf(postcodeText.toLowerCase()) !== -1;
+
+  if (!(suburbIncluded && postcodeIncluded)) {
+    parts.push(locality);
+  }
+
+  return parts.join(", ");
 }
 
 function extractAddressFromPayload(rawPayload) {
   rawPayload = rawPayload || {};
+  var street = "";
   var suburb = fieldDataValue(rawPayload, ["suburb", "city"]);
   var postcode = fieldDataValue(rawPayload, ["postcode", "post_code"]);
-  var address = "";
+  var field;
+  var value;
+  var text;
 
-  if (!suburb || !postcode) {
-    for (var field in rawPayload) {
-      if (!Object.prototype.hasOwnProperty.call(rawPayload, field)) continue;
-      var value = rawPayload[field];
-      if (value == null || value === "") continue;
-      var text = String(value).trim();
-      if (!text) continue;
-      var normalized = field.toLowerCase();
+  for (field in rawPayload) {
+    if (!Object.prototype.hasOwnProperty.call(rawPayload, field)) continue;
+    value = rawPayload[field];
+    if (value == null || value === "") continue;
+    if (typeof value === "object") continue;
+    text = String(value).trim();
+    if (!text) continue;
 
-      if (!suburb && (normalized.indexOf("suburb") !== -1 || normalized.indexOf("city") !== -1)) {
-        suburb = text;
-      } else if (
-        !postcode &&
-        (normalized.indexOf("postcode") !== -1 || normalized.indexOf("post_code") !== -1)
-      ) {
-        postcode = text;
-      } else if (!address && normalized.indexOf("address") !== -1) {
-        address = text;
-      } else if (!suburb && /^text[-_]?\d+$/i.test(field)) {
-        suburb = text;
-      } else if (!postcode && /^number[-_]?\d+$/i.test(field) && /^\d{4}$/.test(text)) {
-        postcode = text;
-      }
+    if (!street && isStreetPayloadField(field)) {
+      street = text;
+    } else if (!suburb && isSuburbPayloadField(field)) {
+      suburb = text;
+    } else if (!postcode && isPostcodePayloadField(field)) {
+      postcode = text;
+    } else if (!suburb && /^text[-_]?\d+$/i.test(field)) {
+      suburb = text;
+    } else if (!postcode && /^number[-_]?\d+$/i.test(field) && /^\d{4}$/.test(text)) {
+      postcode = text;
     }
   }
 
-  if (suburb && postcode) return suburb + " " + postcode;
-  if (suburb) return suburb;
-  if (postcode) return postcode;
-  if (address) return address;
-  return "";
+  return joinJobAddress(street, suburb, postcode);
 }
 
 function extractAddress(lead) {
   return extractAddressFromPayload(lead.raw_payload || {});
 }
 
-function buildJobDescription(lead) {
-  var lines = [];
-  var formAnswers = formatLeadFormAnswers(lead.raw_payload || {}, lead);
-  var i;
+function extractServiceRequiredForJob(rawPayload, lead) {
+  var fromFieldData = fieldDataValue(rawPayload, [
+    "service_required",
+    "service_requested",
+    "service",
+  ]);
+  if (fromFieldData) return formatDisplayText(fromFieldData);
 
-  if (lead.service_requested) {
-    lines.push("Service: " + formatDisplayText(lead.service_requested));
+  if (isForminatorPayload(rawPayload)) {
+    var prefixes = ["select", "radio", "hidden"];
+    var p;
+    var keys;
+    var k;
+    for (p = 0; p < prefixes.length; p++) {
+      keys = sortedForminatorKeys(rawPayload, prefixes[p]);
+      for (k = 0; k < keys.length; k++) {
+        var text = String(rawPayload[keys[k]] || "").trim();
+        if (text && isHumanReadableAnswer(text)) {
+          return formatDisplayText(text);
+        }
+      }
+    }
   }
-  for (i = 0; i < formAnswers.length; i++) {
-    lines.push(formAnswers[i].label + ": " + formAnswers[i].value);
+
+  var serviceRequested = lead && lead.service_requested ? String(lead.service_requested).trim() : "";
+  var formName = String(rawPayload.form_name || "").trim();
+  if (serviceRequested && serviceRequested !== formName) {
+    return formatDisplayText(serviceRequested);
   }
-  if (lead.message && formAnswers.length === 0) {
-    lines.push("Message: " + formatDisplayText(lead.message));
+
+  return "";
+}
+
+function extractMessageForJob(rawPayload, lead) {
+  var answers = formatLeadFormAnswers(rawPayload || {}, lead);
+  var i;
+  for (i = 0; i < answers.length; i++) {
+    if (answers[i].label.toLowerCase() === "message" && answers[i].value) {
+      return answers[i].value;
+    }
   }
-  if (lead.notes) lines.push("Notes: " + formatDisplayText(lead.notes));
-  lines.push("Lead source: " + lead.source);
-  lines.push("Lead ID: " + lead.id);
+  var message = lead && lead.message ? String(lead.message).trim() : "";
+  return message ? formatDisplayText(message) : "";
+}
+
+function buildJobDescription(lead) {
+  var rawPayload = lead.raw_payload || {};
+  var service = extractServiceRequiredForJob(rawPayload, lead);
+  var message = extractMessageForJob(rawPayload, lead);
+  var lines = [];
+  if (service) lines.push("Service Required: " + service);
+  if (message) lines.push("Message: " + message);
   return lines.join("\n") || "New lead from dashboard";
 }
 
 function isDuplicateNameError(message) {
   return String(message).toLowerCase().indexOf("name must be unique") !== -1;
+}
+
+function formatServiceM8Error(message) {
+  var text = String(message || "");
+  text = text
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&");
+  var failedMatch = text.match(/failed\s*\(\d+\)\s*:\s*(.+)$/i);
+  if (failedMatch) text = failedMatch[1].trim();
+  text = text.replace(/\s+/g, " ").trim();
+  if (text.length > 220) text = text.slice(0, 217) + "...";
+  return text || "ServiceM8 request failed";
 }
 
 var SERVICEM8_CATEGORY_UUIDS = {
@@ -400,7 +632,8 @@ function resolveLeadCategory(source, rawPayload) {
   if (source === "facebook") return "facebook";
 
   var url = String(
-    rawPayload.current_url || rawPayload.page_url || rawPayload.referer_url || "",
+    rawPayload.current_url || rawPayload.page_url || rawPayload.referer_url ||
+      rawPayload._wp_http_referer || "",
   ).trim().toLowerCase();
   if (!url) {
     var key;
@@ -493,8 +726,46 @@ async function findCompanyByName(accessToken, name) {
   return companies[0] && companies[0].uuid ? companies[0].uuid : null;
 }
 
+async function findCompanyByNameScan(accessToken, name) {
+  var target = String(name || "").trim().toLowerCase();
+  if (!target) return null;
+
+  var offset = 0;
+  var pageSize = 100;
+  var maxPages = 5;
+
+  for (var page = 0; page < maxPages; page++) {
+    var query = "$top=" + pageSize + "&$skip=" + offset;
+    var companies = await servicem8Get(accessToken, "company.json", query);
+    if (!companies.length) return null;
+
+    for (var i = 0; i < companies.length; i++) {
+      var companyName = String(companies[i].name || "").trim().toLowerCase();
+      if (companyName === target && companies[i].uuid) {
+        return companies[i].uuid;
+      }
+    }
+
+    if (companies.length < pageSize) return null;
+    offset += pageSize;
+  }
+
+  return null;
+}
+
+async function resolveCompanyUuid(accessToken, name) {
+  try {
+    var filtered = await findCompanyByName(accessToken, name);
+    if (filtered) return filtered;
+  } catch (e) {
+    // OData filters can fail on apostrophes and other special characters.
+  }
+
+  return findCompanyByNameScan(accessToken, name);
+}
+
 async function findOrCreateCompany(accessToken, name) {
-  var existing = await findCompanyByName(accessToken, name);
+  var existing = await resolveCompanyUuid(accessToken, name);
   if (existing) return existing;
 
   try {
@@ -502,7 +773,7 @@ async function findOrCreateCompany(accessToken, name) {
   } catch (error) {
     var message = error instanceof Error ? error.message : String(error);
     if (isDuplicateNameError(message)) {
-      var retry = await findCompanyByName(accessToken, name);
+      var retry = await resolveCompanyUuid(accessToken, name);
       if (retry) return retry;
     }
     throw error;
@@ -598,7 +869,9 @@ exports.handler = async function (event) {
         }),
       };
     } catch (lookupError) {
-      var lookupMessage = lookupError instanceof Error ? lookupError.message : String(lookupError);
+      var lookupMessage = formatServiceM8Error(
+        lookupError instanceof Error ? lookupError.message : String(lookupError),
+      );
       return { eventResponse: JSON.stringify({ error: lookupMessage }) };
     }
   }
@@ -625,7 +898,9 @@ exports.handler = async function (event) {
         }),
       };
     } catch (error) {
-      var message = error instanceof Error ? error.message : String(error);
+      var message = formatServiceM8Error(
+        error instanceof Error ? error.message : String(error),
+      );
       return { eventResponse: JSON.stringify({ error: message }) };
     }
   }
@@ -686,3 +961,5 @@ exports.handler = async function (event) {
     eventResponse: html,
   };
 };
+
+    

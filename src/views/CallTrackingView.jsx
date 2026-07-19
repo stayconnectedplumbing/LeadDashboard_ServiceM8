@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
-  Eye,
   Filter,
   Headphones,
   Loader2,
@@ -24,24 +23,22 @@ import {
   DEMO_PHONE_CALLS,
   downloadCallsCSV,
   formatCallStatus,
+  isAnonymousCaller,
   matchesCallStatusFilter,
   normalizePhoneCall,
   statusBadgeClass,
 } from "../callTracking";
+import { FilterSettings } from "../components/FilterSettings";
 import { StatsDateFilters } from "../components/StatsDateFilters";
 import { formatDate, formatDuration } from "../utils/format";
-import { isInSydneyDateRange, todayInSydney } from "../utils/time";
+import {
+  applyCallsFilterDefaults,
+  loadFilterDefaults,
+} from "../utils/filterDefaults";
+import { isInSydneyDateRange } from "../utils/time";
 
 function getCallTime(call) {
   return call.call_started_at || call.created_at;
-}
-
-const DEFAULT_STATUS_FILTER = "missed_abandoned";
-const DEFAULT_FOLLOWED_UP_FILTER = "no";
-
-function defaultCallDateFilters() {
-  const today = todayInSydney();
-  return { dateFrom: today, dateTo: today };
 }
 
 export function CallTrackingView() {
@@ -49,17 +46,21 @@ export function CallTrackingView() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUS_FILTER);
-  const [brandFilter, setBrandFilter] = useState("all");
-  const [followedUpFilter, setFollowedUpFilter] = useState(
-    DEFAULT_FOLLOWED_UP_FILTER,
+  const [filterDefaults, setFilterDefaults] = useState(() => loadFilterDefaults());
+  const [initialFilters] = useState(() =>
+    applyCallsFilterDefaults(loadFilterDefaults().calls),
   );
-  const [firstTimeFilter, setFirstTimeFilter] = useState("all");
-  const [statsDateFrom, setStatsDateFrom] = useState(() => todayInSydney());
-  const [statsDateTo, setStatsDateTo] = useState(() => todayInSydney());
-  const [dateFrom, setDateFrom] = useState(() => todayInSydney());
-  const [dateTo, setDateTo] = useState(() => todayInSydney());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState(initialFilters.status);
+  const [brandFilter, setBrandFilter] = useState(initialFilters.brand);
+  const [followedUpFilter, setFollowedUpFilter] = useState(
+    initialFilters.followedUp,
+  );
+  const [firstTimeFilter, setFirstTimeFilter] = useState(initialFilters.firstTime);
+  const [statsDateFrom, setStatsDateFrom] = useState(initialFilters.statsDateFrom);
+  const [statsDateTo, setStatsDateTo] = useState(initialFilters.statsDateTo);
+  const [dateFrom, setDateFrom] = useState(initialFilters.dateFrom);
+  const [dateTo, setDateTo] = useState(initialFilters.dateTo);
   const [expandedRows, setExpandedRows] = useState({});
   const [localNotes, setLocalNotes] = useState({});
 
@@ -118,6 +119,8 @@ export function CallTrackingView() {
 
   const filteredCalls = useMemo(() => {
     return calls.filter((call) => {
+      if (isAnonymousCaller(call.caller_phone)) return false;
+
       const matchesSearch =
         !searchQuery.trim() ||
         [
@@ -147,11 +150,9 @@ export function CallTrackingView() {
         (firstTimeFilter === "yes" && call.first_time_caller) ||
         (firstTimeFilter === "no" && call.first_time_caller === false);
 
-      const matchesDate = isInSydneyDateRange(
-        getCallTime(call),
-        dateFrom,
-        dateTo,
-      );
+      const matchesDate =
+        (!dateFrom && !dateTo) ||
+        isInSydneyDateRange(getCallTime(call), dateFrom, dateTo);
 
       return (
         matchesSearch &&
@@ -174,9 +175,15 @@ export function CallTrackingView() {
   ]);
 
   const statsCalls = useMemo(() => {
-    return calls.filter((call) =>
-      isInSydneyDateRange(getCallTime(call), statsDateFrom, statsDateTo),
-    );
+    return calls.filter((call) => {
+      if (isAnonymousCaller(call.caller_phone)) return false;
+      if (!statsDateFrom && !statsDateTo) return true;
+      return isInSydneyDateRange(
+        getCallTime(call),
+        statsDateFrom,
+        statsDateTo,
+      );
+    });
   }, [calls, statsDateFrom, statsDateTo]);
 
   const stats = useMemo(() => {
@@ -249,15 +256,26 @@ export function CallTrackingView() {
     }));
   }
 
-  function resetFilters() {
+  function applySavedCallsDefaults(defaults = filterDefaults) {
+    const next = applyCallsFilterDefaults(defaults.calls);
     setSearchQuery("");
-    setStatusFilter(DEFAULT_STATUS_FILTER);
-    setBrandFilter("all");
-    setFollowedUpFilter(DEFAULT_FOLLOWED_UP_FILTER);
-    setFirstTimeFilter("all");
-    const { dateFrom: todayFrom, dateTo: todayTo } = defaultCallDateFilters();
-    setDateFrom(todayFrom);
-    setDateTo(todayTo);
+    setStatusFilter(next.status);
+    setBrandFilter(next.brand);
+    setFollowedUpFilter(next.followedUp);
+    setFirstTimeFilter(next.firstTime);
+    setDateFrom(next.dateFrom);
+    setDateTo(next.dateTo);
+    setStatsDateFrom(next.statsDateFrom);
+    setStatsDateTo(next.statsDateTo);
+  }
+
+  function resetFilters() {
+    applySavedCallsDefaults(filterDefaults);
+  }
+
+  function handleFilterDefaultsSaved(nextDefaults) {
+    setFilterDefaults(nextDefaults);
+    applySavedCallsDefaults(nextDefaults);
   }
 
   function handleExportCSV() {
@@ -357,6 +375,10 @@ export function CallTrackingView() {
             <h2>Filters</h2>
           </div>
           <div className="filters-header-actions">
+            <FilterSettings
+              initialTab="calls"
+              onSaved={handleFilterDefaultsSaved}
+            />
             <button
               className="text-button"
               onClick={handleExportCSV}
@@ -474,6 +496,12 @@ export function CallTrackingView() {
               className="filter-select filter-date"
             />
           </div>
+
+          {!dateFrom && !dateTo && (
+            <p className="filter-hint full-width">
+              Date range is empty — showing all calls (all time).
+            </p>
+          )}
         </div>
       </section>
 
@@ -512,20 +540,19 @@ export function CallTrackingView() {
                 <th>Followed Up</th>
                 <th>Talk Time</th>
                 <th>Call Time</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="11" className="table-loading">
+                  <td colSpan="10" className="table-loading">
                     <Loader2 className="spin" />
                     Loading calls...
                   </td>
                 </tr>
               ) : filteredCalls.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="table-empty">
+                  <td colSpan="10" className="table-empty">
                     No calls found
                   </td>
                 </tr>
@@ -593,20 +620,10 @@ export function CallTrackingView() {
                         <td className="date-cell">
                           {formatDate(getCallTime(call))}
                         </td>
-                        <td className="action-cell">
-                          <button
-                            className="expand-btn"
-                            onClick={() => toggleExpand(call.id)}
-                            type="button"
-                            title="View details"
-                          >
-                            <Eye size={16} />
-                          </button>
-                        </td>
                       </tr>
                       {expandedRows[call.id] && (
                         <tr className="expanded-row">
-                          <td colSpan="11">
+                          <td colSpan="10">
                             <div className="expanded-content call-detail-grid">
                               <div className="expanded-section">
                                 <h4>Call details</h4>

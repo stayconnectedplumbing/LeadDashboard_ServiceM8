@@ -459,6 +459,25 @@ function isStreetPayloadField(field) {
   return /^address[-_]?\d+$/i.test(field);
 }
 
+/** ServiceM8 rejects job_address / billing_address over 500 characters. */
+var SERVICEM8_ADDRESS_MAX_LENGTH = 500;
+var PLAUSIBLE_STREET_MAX_LENGTH = 200;
+
+function isPlausibleStreetAddress(value) {
+  var text = String(value || "").trim();
+  if (!text) return false;
+  if (text.length > PLAUSIBLE_STREET_MAX_LENGTH) return false;
+  if ((text.match(/\n/g) || []).length >= 2) return false;
+  return true;
+}
+
+function clampServiceM8Address(address) {
+  var text = String(address || "").trim();
+  if (!text) return "";
+  if (text.length <= SERVICEM8_ADDRESS_MAX_LENGTH) return text;
+  return text.slice(0, SERVICEM8_ADDRESS_MAX_LENGTH).trim();
+}
+
 function isSuburbPayloadField(field) {
   var normalized = field.toLowerCase().replace(/_/g, " ");
   return normalized === "suburb" || normalized === "city" || normalized.indexOf("suburb") !== -1;
@@ -519,7 +538,7 @@ function extractAddressFromPayload(rawPayload) {
     text = String(value).trim();
     if (!text) continue;
 
-    if (!street && isStreetPayloadField(field)) {
+    if (!street && isStreetPayloadField(field) && isPlausibleStreetAddress(text)) {
       street = text;
     } else if (!suburb && isSuburbPayloadField(field)) {
       suburb = text;
@@ -532,7 +551,7 @@ function extractAddressFromPayload(rawPayload) {
     }
   }
 
-  return joinJobAddress(street, suburb, postcode);
+  return clampServiceM8Address(joinJobAddress(street, suburb, postcode));
 }
 
 function extractAddress(lead) {
@@ -572,10 +591,26 @@ function extractServiceRequiredForJob(rawPayload, lead) {
   return "";
 }
 
+function extractMessageForJob(rawPayload, lead) {
+  var answers = formatLeadFormAnswers(rawPayload || {}, lead);
+  var i;
+  for (i = 0; i < answers.length; i++) {
+    if (answers[i].label.toLowerCase() === "message" && answers[i].value) {
+      return answers[i].value;
+    }
+  }
+  var message = lead && lead.message ? String(lead.message).trim() : "";
+  return message ? formatDisplayText(message) : "";
+}
+
 function buildJobDescription(lead) {
-  var service = extractServiceRequiredForJob(lead.raw_payload || {}, lead);
-  if (!service) return "New lead from dashboard";
-  return "Service Required: " + service;
+  var rawPayload = lead.raw_payload || {};
+  var service = extractServiceRequiredForJob(rawPayload, lead);
+  var message = extractMessageForJob(rawPayload, lead);
+  var lines = [];
+  if (service) lines.push("Service Required: " + service);
+  if (message) lines.push("Message: " + message);
+  return lines.join("\n") || "New lead from dashboard";
 }
 
 function isDuplicateNameError(message) {

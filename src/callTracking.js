@@ -22,6 +22,24 @@ export const BRAND_FILTER_OPTIONS = [
   { id: "Same Day Home Services", label: "Same Day Home Services" },
 ];
 
+/** Withheld / private caller IDs from WildJar — hidden from Call Tracking UI. */
+const HIDDEN_CALLER_PHONES = new Set([
+  "anonymous",
+  "private",
+  "withheld",
+  "unknown",
+  "restricted",
+  "unavailable",
+]);
+
+export function isAnonymousCaller(callerPhone) {
+  const value = String(callerPhone ?? "")
+    .trim()
+    .toLowerCase();
+  if (!value) return false;
+  return HIDDEN_CALLER_PHONES.has(value);
+}
+
 export function formatCallStatus(status) {
   if (!status) return "Unknown";
   return status.charAt(0).toUpperCase() + status.slice(1);

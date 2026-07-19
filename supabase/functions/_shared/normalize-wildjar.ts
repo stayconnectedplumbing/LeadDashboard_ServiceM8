@@ -1,3 +1,5 @@
+import { parseAustralianLocalTime } from "./australian-time.ts";
+
 type JsonRecord = Record<string, unknown>;
 
 function pickString(payload: JsonRecord, keys: string[]): string | null {
@@ -31,12 +33,71 @@ function pickBoolean(payload: JsonRecord, keys: string[]): boolean | null {
   return null;
 }
 
-function pickDate(payload: JsonRecord, keys: string[]): string | null {
-  const value = pickString(payload, keys);
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+function pickUtcTimestamp(payload: JsonRecord, keys: string[]): string | null {
+  for (const key of keys) {
+    const parsed = parseAustralianLocalTime(payload[key]);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function pickGmtTimestamp(payload: JsonRecord, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = pickString(payload, [key]);
+    if (!value) continue;
+
+    const normalized = value.includes("T")
+      ? value
+      : `${value.replace(" ", "T")}Z`;
+    const parsed = parseAustralianLocalTime(normalized);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function pickWildJarCallTime(payload: JsonRecord, kind: "start" | "end"): string | null {
+  if (kind === "start") {
+    return (
+      pickUtcTimestamp(payload, ["dateStartISO", "date_start_iso"]) ??
+      pickGmtTimestamp(payload, ["dateStartGMT", "date_start_gmt"]) ??
+      pickUtcTimestamp(payload, [
+        "dateStartLocal",
+        "date_start_local",
+        "dateStartUser",
+        "date_start_user",
+        "date",
+        "localTime",
+        "call_started_at",
+        "started_at",
+      ])
+    );
+  }
+
+  return (
+    pickUtcTimestamp(payload, ["dateStopISO", "date_stop_iso"]) ??
+    pickGmtTimestamp(payload, ["dateStopGMT", "date_stop_gmt"]) ??
+    pickUtcTimestamp(payload, [
+      "dateStopLocal",
+      "date_stop_local",
+      "dateStopUser",
+      "date_stop_user",
+      "call_ended_at",
+      "ended_at",
+    ])
+  );
+}
+
+function pickWebAttribution(payload: JsonRecord) {
+  const web = payload.web;
+  if (!web || typeof web !== "object" || Array.isArray(web)) {
+    return { web_source: null, web_medium: null };
+  }
+
+  const record = web as JsonRecord;
+  return {
+    web_source: pickString(record, ["source", "utm_source", "web_source"]),
+    web_medium: pickString(record, ["medium", "utm_medium", "web_medium"]),
+  };
 }
 
 export function unwrapWildJarPayload(body: JsonRecord): JsonRecord {
@@ -104,6 +165,9 @@ export function normalizeWildJarPayload(payload: JsonRecord) {
     Boolean(callStatus) ||
     pickNumber(payload, ["duration", "duration_seconds", "call_duration"]) !== null;
 
+  const normalizedStatus = callStatus?.toLowerCase() ?? null;
+  const webAttribution = pickWebAttribution(payload);
+
   return {
     wildjar_call_id: wildjarCallId,
     event_type: eventType,
@@ -121,7 +185,7 @@ export function normalizeWildJarPayload(payload: JsonRecord) {
       "tracking_num",
     ]),
     tracking_source: trackingSource,
-    call_status: callStatus?.toLowerCase() ?? null,
+    call_status: normalizedStatus,
     duration_seconds: pickNumber(payload, [
       "duration",
       "duration_seconds",
@@ -140,8 +204,12 @@ export function normalizeWildJarPayload(payload: JsonRecord) {
       "first_time",
     ]),
     caller_area: pickString(payload, ["area", "caller_area", "callerArea"]),
-    web_source: pickString(payload, ["web_source", "webSource", "utm_source"]),
-    web_medium: pickString(payload, ["web_medium", "webMedium", "utm_medium"]),
+    web_source:
+      pickString(payload, ["web_source", "webSource", "utm_source"]) ??
+      webAttribution.web_source,
+    web_medium:
+      pickString(payload, ["web_medium", "webMedium", "utm_medium"]) ??
+      webAttribution.web_medium,
     ivr_option: pickString(payload, [
       "IVR:name",
       "ivr_option",
@@ -150,22 +218,10 @@ export function normalizeWildJarPayload(payload: JsonRecord) {
     ]),
     account_name: accountName,
     brand: resolveBrand(trackingSource, accountName),
-    call_started_at: pickDate(payload, [
-      "dateStartLocal",
-      "date_start_local",
-      "date",
-      "localTime",
-      "call_started_at",
-      "started_at",
-    ]),
-    call_ended_at: pickDate(payload, [
-      "dateStopLocal",
-      "date_stop_local",
-      "call_ended_at",
-      "ended_at",
-    ]),
+    call_started_at: pickWildJarCallTime(payload, "start"),
+    call_ended_at: pickWildJarCallTime(payload, "end"),
     raw_payload: payload,
-    followed_up: isCompleted && callStatus === "answered",
+    followed_up: isCompleted && normalizedStatus === "answered",
     received_at: new Date().toISOString(),
   };
 }

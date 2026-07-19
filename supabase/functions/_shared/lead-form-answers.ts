@@ -543,6 +543,20 @@ export function extractServiceRequiredForJob(
   return "";
 }
 
+export function extractMessageForJob(
+  rawPayload: Record<string, unknown> = {},
+  lead: LeadFormContext | null = null,
+): string {
+  const answers = formatLeadFormAnswers(rawPayload, lead);
+  const messageAnswer = answers.find(
+    (item) => item.label.toLowerCase() === "message",
+  );
+  if (messageAnswer?.value) return messageAnswer.value;
+
+  const message = lead?.message?.trim() ?? "";
+  return message ? formatDisplayText(message) : "";
+}
+
 export function formatLeadFormAnswersText(
   rawPayload: Record<string, unknown> = {},
   lead: LeadFormContext | null = null,
@@ -572,12 +586,33 @@ function fieldDataValue(
   return "";
 }
 
+/** ServiceM8 rejects job_address / billing_address over 500 characters. */
+export const SERVICEM8_ADDRESS_MAX_LENGTH = 500;
+
+/** Real street lines are short; long multi-line text is usually a message pasted into Address. */
+const PLAUSIBLE_STREET_MAX_LENGTH = 200;
+
 function isStreetPayloadField(field: string): boolean {
   const normalized = field.toLowerCase().replace(/_/g, " ");
   if (normalized.includes("email") || normalized.includes("page url")) return false;
   if (normalized === "address" || normalized === "job address") return true;
   if (normalized.includes("address")) return true;
   return /^address[-_]?\d+$/i.test(field);
+}
+
+export function isPlausibleStreetAddress(value: string): boolean {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.length > PLAUSIBLE_STREET_MAX_LENGTH) return false;
+  if ((text.match(/\n/g) || []).length >= 2) return false;
+  return true;
+}
+
+export function clampServiceM8Address(address: string): string {
+  const text = String(address || "").trim();
+  if (!text) return "";
+  if (text.length <= SERVICEM8_ADDRESS_MAX_LENGTH) return text;
+  return text.slice(0, SERVICEM8_ADDRESS_MAX_LENGTH).trim();
 }
 
 function isSuburbPayloadField(field: string): boolean {
@@ -644,7 +679,7 @@ export function extractAddressFromPayload(
     const text = String(value).trim();
     if (!text) continue;
 
-    if (!street && isStreetPayloadField(field)) {
+    if (!street && isStreetPayloadField(field) && isPlausibleStreetAddress(text)) {
       street = text;
     } else if (!suburb && isSuburbPayloadField(field)) {
       suburb = text;
@@ -657,5 +692,5 @@ export function extractAddressFromPayload(
     }
   }
 
-  return joinJobAddress(street, suburb, postcode);
+  return clampServiceM8Address(joinJobAddress(street, suburb, postcode));
 }

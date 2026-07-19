@@ -478,6 +478,25 @@ function isStreetPayloadField(field) {
   return /^address[-_]?\d+$/i.test(field);
 }
 
+/** ServiceM8 rejects job_address / billing_address over 500 characters. */
+export const SERVICEM8_ADDRESS_MAX_LENGTH = 500;
+const PLAUSIBLE_STREET_MAX_LENGTH = 200;
+
+export function isPlausibleStreetAddress(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.length > PLAUSIBLE_STREET_MAX_LENGTH) return false;
+  if ((text.match(/\n/g) || []).length >= 2) return false;
+  return true;
+}
+
+export function clampServiceM8Address(address) {
+  const text = String(address || "").trim();
+  if (!text) return "";
+  if (text.length <= SERVICEM8_ADDRESS_MAX_LENGTH) return text;
+  return text.slice(0, SERVICEM8_ADDRESS_MAX_LENGTH).trim();
+}
+
 function isSuburbPayloadField(field) {
   const normalized = field.toLowerCase().replace(/_/g, " ");
   return (
@@ -536,7 +555,7 @@ export function extractAddressFromPayload(rawPayload = {}) {
     const text = String(value).trim();
     if (!text) continue;
 
-    if (!street && isStreetPayloadField(field)) {
+    if (!street && isStreetPayloadField(field) && isPlausibleStreetAddress(text)) {
       street = text;
     } else if (!suburb && isSuburbPayloadField(field)) {
       suburb = text;
@@ -549,5 +568,5 @@ export function extractAddressFromPayload(rawPayload = {}) {
     }
   }
 
-  return joinJobAddress(street, suburb, postcode);
+  return clampServiceM8Address(joinJobAddress(street, suburb, postcode));
 }

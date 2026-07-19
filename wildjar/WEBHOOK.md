@@ -87,6 +87,7 @@ Open the dashboard → **Call Tracking** in the left menu. Calls appear in real 
 - Phone calls are stored in the separate `phone_calls` table (not mixed with form leads).
 - Re-sending the same WildJar call ID updates the row (duration, recording, status).
 - Staff can mark **Followed up** and add notes in the dashboard.
+- Call times use WildJar `dateStartISO` / `dateStopISO` (UTC). If you fix timezone handling, redeploy `wildjar-webhook` and run `supabase/migrations/fix-phone-calls-timezone.sql` in the SQL Editor to correct existing rows.
 
 ## All accounts & new numbers (client self-service)
 

@@ -42,8 +42,13 @@ import {
 import { formatDate } from "../utils/format";
 import { formatLeadFormAnswers } from "../utils/leadFormAnswers";
 import { formatServiceM8Error } from "../utils/servicem8Error";
+import { FilterSettings } from "../components/FilterSettings";
 import { StatsDateFilters } from "../components/StatsDateFilters";
-import { isInSydneyDateRange, todayInSydney } from "../utils/time";
+import {
+  applyLeadsFilterDefaults,
+  loadFilterDefaults,
+} from "../utils/filterDefaults";
+import { isInSydneyDateRange } from "../utils/time";
 
 function CategoryIcon({ category }) {
   if (category === "facebook") return <UserRound size={14} />;
@@ -207,15 +212,19 @@ export function LeadsView({ focusLeadRef }) {
   const [error, setError] = useState("");
   const [toast, setToast] = useState(null);
   const [pushErrors, setPushErrors] = useState({});
+  const [filterDefaults, setFilterDefaults] = useState(() => loadFilterDefaults());
+  const [initialFilters] = useState(() =>
+    applyLeadsFilterDefaults(loadFilterDefaults().leads),
+  );
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [calledFilter, setCalledFilter] = useState("no");
-  const [attemptedFilter, setAttemptedFilter] = useState("no");
-  const [pushedFilter, setPushedFilter] = useState("all");
-  const [statsDateFrom, setStatsDateFrom] = useState(() => todayInSydney());
-  const [statsDateTo, setStatsDateTo] = useState(() => todayInSydney());
-  const [dateFrom, setDateFrom] = useState(() => todayInSydney());
-  const [dateTo, setDateTo] = useState(() => todayInSydney());
+  const [categoryFilter, setCategoryFilter] = useState(initialFilters.category);
+  const [calledFilter, setCalledFilter] = useState(initialFilters.called);
+  const [attemptedFilter, setAttemptedFilter] = useState(initialFilters.attempted);
+  const [pushedFilter, setPushedFilter] = useState(initialFilters.pushed);
+  const [statsDateFrom, setStatsDateFrom] = useState(initialFilters.statsDateFrom);
+  const [statsDateTo, setStatsDateTo] = useState(initialFilters.statsDateTo);
+  const [dateFrom, setDateFrom] = useState(initialFilters.dateFrom);
+  const [dateTo, setDateTo] = useState(initialFilters.dateTo);
   const [nowTick, setNowTick] = useState(Date.now());
   const [expandedRows, setExpandedRows] = useState({});
   const [localNotes, setLocalNotes] = useState({});
@@ -385,11 +394,9 @@ export function LeadsView({ focusLeadRef }) {
         (pushedFilter === "yes" && isPushedToServiceM8(lead)) ||
         (pushedFilter === "no" && !isPushedToServiceM8(lead));
 
-      const matchesDate = isInSydneyDateRange(
-        getLeadReceivedAt(lead),
-        dateFrom,
-        dateTo,
-      );
+      const matchesDate =
+        (!dateFrom && !dateTo) ||
+        isInSydneyDateRange(getLeadReceivedAt(lead), dateFrom, dateTo);
 
       return (
         matchesSearch &&
@@ -464,8 +471,14 @@ export function LeadsView({ focusLeadRef }) {
   );
 
   const statsLeads = useMemo(() => {
-    return leads.filter((lead) =>
-      isInSydneyDateRange(getLeadReceivedAt(lead), statsDateFrom, statsDateTo),
+    return leads.filter(
+      (lead) =>
+        (!statsDateFrom && !statsDateTo) ||
+        isInSydneyDateRange(
+          getLeadReceivedAt(lead),
+          statsDateFrom,
+          statsDateTo,
+        ),
     );
   }, [leads, statsDateFrom, statsDateTo]);
 
@@ -678,15 +691,26 @@ export function LeadsView({ focusLeadRef }) {
     }));
   }
 
-  function resetFilters() {
-    const today = todayInSydney();
+  function applySavedLeadsDefaults(defaults = filterDefaults) {
+    const next = applyLeadsFilterDefaults(defaults.leads);
     setSearchQuery("");
-    setCategoryFilter("all");
-    setCalledFilter("no");
-    setAttemptedFilter("no");
-    setPushedFilter("all");
-    setDateFrom(today);
-    setDateTo(today);
+    setCategoryFilter(next.category);
+    setCalledFilter(next.called);
+    setAttemptedFilter(next.attempted);
+    setPushedFilter(next.pushed);
+    setDateFrom(next.dateFrom);
+    setDateTo(next.dateTo);
+    setStatsDateFrom(next.statsDateFrom);
+    setStatsDateTo(next.statsDateTo);
+  }
+
+  function resetFilters() {
+    applySavedLeadsDefaults(filterDefaults);
+  }
+
+  function handleFilterDefaultsSaved(nextDefaults) {
+    setFilterDefaults(nextDefaults);
+    applySavedLeadsDefaults(nextDefaults);
   }
 
   function handleExportCSV() {
@@ -781,6 +805,10 @@ export function LeadsView({ focusLeadRef }) {
             <h2>Filters</h2>
           </div>
           <div className="filters-header-actions">
+            <FilterSettings
+              initialTab="leads"
+              onSaved={handleFilterDefaultsSaved}
+            />
             <button
               className="text-button"
               onClick={handleExportCSV}
@@ -896,6 +924,12 @@ export function LeadsView({ focusLeadRef }) {
               className="filter-select filter-date"
             />
           </div>
+
+          {!dateFrom && !dateTo && (
+            <p className="filter-hint full-width">
+              Date range is empty — showing all leads (all time).
+            </p>
+          )}
         </div>
       </section>
 
